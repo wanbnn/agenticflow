@@ -19,9 +19,9 @@ RUN mkdir -p /app/data && chown -R agentic:agentic /app
 
 USER agentic
 
-EXPOSE 8000
+EXPOSE 16777
 
 HEALTHCHECK --interval=20s --timeout=5s --start-period=20s --retries=5 \
-  CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)"
+  CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:16777/health', timeout=3)"
 
 CMD ["python", "-m", "agentic_flow.main"]

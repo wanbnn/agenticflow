@@ -112,7 +112,7 @@ estiver saudável.
 
 ### 3. Crie o administrador
 
-Abra [http://127.0.0.1:8000](http://127.0.0.1:8000).
+Abra [http://127.0.0.1:16777](http://127.0.0.1:16777).
 
 No primeiro acesso, o sistema redireciona obrigatoriamente para `/setup`.
 Crie o administrador e o primeiro workspace. Depois do bootstrap, todos os
@@ -251,8 +251,8 @@ python -m agentic_flow.main
 ```
 
 Sem MySQL configurado, o modo nativo utiliza SQLite em
-`data/agentic-flow-v2.db`. A aplicação fica em `http://127.0.0.1:8000` e a
-documentação da API em `http://127.0.0.1:8000/docs`.
+`data/agentic-flow-v2.db`. A aplicação fica em `http://127.0.0.1:16777` e a
+documentação da API em `http://127.0.0.1:16777/docs`.
 
 ## 🧩 Criando um novo tipo de nó
 

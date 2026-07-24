@@ -38,7 +38,7 @@ services:
       COOKIE_SECURE: ${COOKIE_SECURE:-false}
       AGENTIC_FLOW_DATA_DIR: /app/data
     ports:
-      - "${AGENTIC_FLOW_PORT:-8000}:8000"
+      - "${AGENTIC_FLOW_PORT:-16777}:16777"
     volumes:
       - agentic_data:/app/data
 
