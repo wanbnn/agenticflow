@@ -1,0 +1,184 @@
+from fastapi.testclient import TestClient
+
+from agentic_flow.main import create_app
+
+
+def bootstrap(client: TestClient):
+    response = client.post(
+        "/api/auth/setup",
+        json={
+            "name": "Admin",
+            "email": "admin@example.com",
+            "password": "senha-segura-123",
+            "workspace_name": "Workspace de testes",
+        },
+    )
+    assert response.status_code == 201
+    return response.json()
+
+
+def test_first_run_requires_admin_and_then_opens_dashboard(tmp_path):
+    client = TestClient(create_app(tmp_path / "test.db"))
+    response = client.get("/")
+    assert response.status_code == 200
+    assert "Crie o administrador" in response.text
+
+    bootstrap(client)
+    response = client.get("/")
+    assert response.status_code == 200
+    assert "Workflows" in response.text
+    assert "Equipe de pesquisa" in response.text
+
+
+def test_editor_is_rendered_with_pyreact_after_login(tmp_path):
+    client = TestClient(create_app(tmp_path / "test.db"))
+    bootstrap(client)
+    workflow = client.get("/api/workflows").json()[0]
+    response = client.get(f"/workflows/{workflow['id']}")
+    assert "Agentic Flow" in response.text
+    assert 'id="canvas"' in response.text
+    assert "/static/app.js" in response.text
+
+
+def test_crud_and_run_sample(tmp_path):
+    client = TestClient(create_app(tmp_path / "test.db"))
+    bootstrap(client)
+    workflows = client.get("/api/workflows").json()
+    assert len(workflows) == 1
+    workflow = workflows[0]
+
+    result = client.post(
+        f"/api/workflows/{workflow['id']}/run",
+        json={"input": {"message": "Explique LangGraph"}},
+    ).json()
+
+    assert result["status"] == "success"
+    assert "Explique LangGraph" in result["output"]
+    assert len(result["events"]) == 5
+    assert client.get(f"/api/workflows/{workflow['id']}/runs").json()[0]["id"] == result["id"]
+
+
+def test_invalid_edge_returns_validation_error(tmp_path):
+    client = TestClient(create_app(tmp_path / "test.db"))
+    bootstrap(client)
+    workflow = client.get("/api/workflows").json()[0]
+    workflow["edges"].append(
+        {"id": "bad", "source": "missing", "target": "input-1", "source_handle": "default"}
+    )
+    response = client.put(
+        f"/api/workflows/{workflow['id']}",
+        json={
+            "name": workflow["name"],
+            "description": workflow["description"],
+            "nodes": workflow["nodes"],
+            "edges": workflow["edges"],
+        },
+    )
+    assert response.status_code == 422
+
+
+def test_webhook_gets_random_url_and_executes_its_workflow(tmp_path):
+    client = TestClient(create_app(tmp_path / "test.db"))
+    bootstrap(client)
+    payload = {
+        "name": "Atendimento por webhook",
+        "nodes": [
+            {
+                "id": "hook",
+                "type": "webhook",
+                "name": "Mensagem recebida",
+                "position": {"x": 0, "y": 0},
+                "config": {"webhook_id": "", "response_mode": "workflow_result"},
+            },
+            {
+                "id": "agent",
+                "type": "agent",
+                "name": "Atendente",
+                "position": {"x": 250, "y": 0},
+                "config": {
+                    "role": "Atendente",
+                    "provider": "mock",
+                    "input_field": "message",
+                    "output_field": "response",
+                },
+            },
+            {
+                "id": "out",
+                "type": "output",
+                "name": "Resposta",
+                "position": {"x": 500, "y": 0},
+                "config": {"field": "response"},
+            },
+        ],
+        "edges": [
+            {"source": "hook", "target": "agent"},
+            {"source": "agent", "target": "out"},
+        ],
+    }
+    workflow = client.post("/api/workflows", json=payload).json()
+    webhook_id = workflow["nodes"][0]["config"]["webhook_id"]
+    assert webhook_id.startswith("wh_")
+    assert len(webhook_id) > 25
+
+    response = client.post(
+        f"/webhooks/{webhook_id}",
+        json={"message": "Olá pelo sistema externo"},
+    )
+    result = response.json()
+    assert response.status_code == 200
+    assert result["status"] == "success"
+    assert "Olá pelo sistema externo" in result["output"]
+    assert [event["node_id"] for event in result["events"]] == ["hook", "agent", "out"]
+
+    saved_again = client.put(
+        f"/api/workflows/{workflow['id']}",
+        json={
+            "name": workflow["name"],
+            "description": workflow["description"],
+            "nodes": workflow["nodes"],
+            "edges": workflow["edges"],
+        },
+    ).json()
+    assert saved_again["nodes"][0]["config"]["webhook_id"] == webhook_id
+
+
+def test_unknown_webhook_is_not_exposed(tmp_path):
+    client = TestClient(create_app(tmp_path / "test.db"))
+    response = client.post("/webhooks/wh_inexistente", json={"message": "teste"})
+    assert response.status_code == 404
+
+
+def test_authentication_protects_workflows_and_login_restores_session(tmp_path):
+    client = TestClient(create_app(tmp_path / "test.db"))
+    bootstrap(client)
+    client.post("/api/auth/logout")
+    assert client.get("/api/workflows").status_code == 401
+
+    bad = client.post(
+        "/api/auth/login",
+        json={"email": "admin@example.com", "password": "errada"},
+    )
+    assert bad.status_code == 401
+    good = client.post(
+        "/api/auth/login",
+        json={"email": "admin@example.com", "password": "senha-segura-123"},
+    )
+    assert good.status_code == 200
+    assert client.get("/api/workflows").status_code == 200
+
+
+def test_dashboard_can_create_multiple_empty_workflows(tmp_path):
+    client = TestClient(create_app(tmp_path / "test.db"))
+    bootstrap(client)
+    first = client.post(
+        "/api/workflows",
+        json={"name": "Atendimento", "description": "", "nodes": [], "edges": []},
+    )
+    second = client.post(
+        "/api/workflows",
+        json={"name": "Vendas", "description": "", "nodes": [], "edges": []},
+    )
+    assert first.status_code == 201
+    assert second.status_code == 201
+    names = {workflow["name"] for workflow in client.get("/api/workflows").json()}
+    assert {"Equipe de pesquisa", "Atendimento", "Vendas"}.issubset(names)
