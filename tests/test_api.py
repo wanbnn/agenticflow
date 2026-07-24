@@ -18,16 +18,22 @@ def bootstrap(client: TestClient):
 
 
 def test_first_run_requires_admin_and_then_opens_dashboard(tmp_path):
-    client = TestClient(create_app(tmp_path / "test.db"))
+    app = create_app(tmp_path / "test.db")
+    client = TestClient(app)
+    with app.state.store.engine.connect() as connection:
+        assert connection.exec_driver_sql("PRAGMA foreign_keys").scalar() == 1
     response = client.get("/")
     assert response.status_code == 200
     assert "Crie o administrador" in response.text
+    assert client.get("/favicon.ico").status_code == 200
 
     bootstrap(client)
     response = client.get("/")
     assert response.status_code == 200
     assert "Workflows" in response.text
     assert "Equipe de pesquisa" in response.text
+    context = client.get("/api/auth/me").json()
+    assert context["workspace"]["membership_role"] == "owner"
 
 
 def test_editor_is_rendered_with_pyreact_after_login(tmp_path):

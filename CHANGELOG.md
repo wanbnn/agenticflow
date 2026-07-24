@@ -13,6 +13,11 @@ projeto adota [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 - workflow de integração contínua;
 - README orientado a deploy Docker.
 
+### Corrigido
+
+- ordem de inserção do usuário, workspace e membership no bootstrap MySQL;
+- favicon da aplicação, evitando respostas 404 nos acessos.
+
 ## [0.2.0] - 2026-07-24
 
 ### Adicionado

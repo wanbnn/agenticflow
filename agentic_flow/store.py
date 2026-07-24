@@ -5,7 +5,7 @@ from pathlib import Path
 from uuid import uuid4
 
 import bcrypt
-from sqlalchemy import Boolean, ForeignKey, Integer, String, Text, create_engine, select
+from sqlalchemy import Boolean, ForeignKey, Integer, String, Text, create_engine, event, select
 from sqlalchemy.dialects.mysql import LONGTEXT
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker
 
@@ -115,6 +115,12 @@ class Store:
             pool_recycle=1800,
             connect_args=connect_args,
         )
+        if self.engine.dialect.name == "sqlite":
+            @event.listens_for(self.engine, "connect")
+            def enable_sqlite_foreign_keys(dbapi_connection, _connection_record):
+                cursor = dbapi_connection.cursor()
+                cursor.execute("PRAGMA foreign_keys=ON")
+                cursor.close()
         self.Session = sessionmaker(self.engine, expire_on_commit=False)
         Base.metadata.create_all(self.engine)
 
@@ -171,6 +177,11 @@ class Store:
                 slug=f"workspace-{uuid4().hex[:8]}",
                 created_at=now,
             )
+            db.add_all([user, workspace])
+            # Without ORM relationships SQLAlchemy cannot infer unit-of-work
+            # dependency ordering reliably across every dialect. Flush the
+            # parent rows before inserting the membership foreign keys.
+            db.flush()
             membership = MembershipRow(
                 id=f"mem-{uuid4().hex[:12]}",
                 workspace_id=workspace.id,
@@ -178,7 +189,7 @@ class Store:
                 role="owner",
                 created_at=now,
             )
-            db.add_all([user, workspace, membership])
+            db.add(membership)
         return self._user_dict(user), self._workspace_dict(workspace)
 
     def authenticate(self, email: str, password: str) -> dict[str, object] | None:

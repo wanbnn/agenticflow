@@ -190,6 +190,16 @@ def create_app(database: str | Path | None = None) -> FastAPI:
     def health() -> dict[str, str]:
         return {"status": "ok", "engine": "langgraph", "ui": "pyreact"}
 
+    @app.get("/favicon.ico", include_in_schema=False)
+    def favicon():
+        svg = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+        <defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+        <stop stop-color="#957fff"/><stop offset="1" stop-color="#6041ed"/>
+        </linearGradient></defs><rect width="64" height="64" rx="16" fill="url(#g)"/>
+        <path d="M18 46 28 17h8l10 29h-8l-2-7H27l-2 7h-7Zm11-14h5l-2-8-3 8Z"
+        fill="white"/></svg>"""
+        return Response(content=svg, media_type="image/svg+xml")
+
     @app.get("/", include_in_schema=False)
     def index(request: Request):
         if not store.has_users():
