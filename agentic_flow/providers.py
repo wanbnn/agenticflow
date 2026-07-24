@@ -6,7 +6,13 @@ from typing import Any
 
 import httpx
 from cryptography.fernet import Fernet, InvalidToken
-from openai import OpenAI
+from openai import APIConnectionError, APIStatusError, APITimeoutError, OpenAI
+
+
+PROVIDER_CLIENT_HEADERS = {
+    "User-Agent": "AgenticFlow/0.2.0 (+https://github.com/wanbnn/agenticflow)",
+    "Accept": "application/json",
+}
 
 
 PROVIDER_TYPES: list[dict[str, Any]] = [
@@ -154,6 +160,7 @@ class ProviderRuntime:
                 response = client.post(
                     f"{base_url}/v1/messages",
                     headers={
+                        **PROVIDER_CLIENT_HEADERS,
                         "x-api-key": api_key,
                         "anthropic-version": "2023-06-01",
                         "content-type": "application/json",
@@ -177,13 +184,32 @@ class ProviderRuntime:
         client = OpenAI(
             api_key=api_key or "ollama",
             base_url=provider["base_url"].rstrip("/"),
+            default_headers=PROVIDER_CLIENT_HEADERS,
         )
-        response = client.chat.completions.create(
-            model=selected_model,
-            messages=[
-                {"role": "system", "content": instructions},
-                {"role": "user", "content": prompt},
-            ],
-            temperature=temperature,
-        )
+        try:
+            response = client.chat.completions.create(
+                model=selected_model,
+                messages=[
+                    {"role": "system", "content": instructions},
+                    {"role": "user", "content": prompt},
+                ],
+                temperature=temperature,
+            )
+        except APIStatusError as exc:
+            request_id = getattr(exc, "request_id", None)
+            suffix = f" Request ID: {request_id}." if request_id else ""
+            if exc.status_code == 403:
+                raise RuntimeError(
+                    "O provedor ou WAF recusou a requisição (HTTP 403)."
+                    f"{suffix} Revise as regras de firewall/bot do endpoint."
+                ) from exc
+            raise RuntimeError(
+                f"O provedor respondeu com HTTP {exc.status_code}.{suffix}"
+            ) from exc
+        except APITimeoutError as exc:
+            raise RuntimeError("O provedor excedeu o tempo limite da requisição.") from exc
+        except APIConnectionError as exc:
+            raise RuntimeError(
+                "Não foi possível conectar ao provedor. Verifique URL, DNS e TLS."
+            ) from exc
         return response.choices[0].message.content or ""
