@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import operator
-import os
 import re
 import time
 from collections import defaultdict, deque
@@ -10,7 +9,6 @@ from typing import Annotated, Any, TypedDict
 
 import httpx
 from langgraph.graph import END, START, StateGraph
-from openai import OpenAI
 
 from .catalog import CATALOG_BY_TYPE
 from .models import Node, RunEvent, RunRequest, RunResult, Workflow, utc_now
@@ -26,6 +24,7 @@ class FlowState(TypedDict):
     events: Annotated[list[dict[str, Any]], operator.add]
     output: Annotated[dict[str, Any], merge_dicts]
     session_id: str
+    workspace_id: str
 
 
 class WorkflowValidationError(ValueError):
@@ -93,6 +92,9 @@ def validate_workflow(workflow: Workflow) -> None:
 
 
 class WorkflowEngine:
+    def __init__(self, provider_runtime=None):
+        self.provider_runtime = provider_runtime
+
     def _call_model(
         self,
         *,
@@ -100,21 +102,21 @@ class WorkflowEngine:
         config: dict[str, Any],
         instructions: str,
         mock_prefix: str,
+        workspace_id: str,
     ) -> str:
-        if config.get("provider", "mock") == "mock":
+        provider_id = config.get("provider_id") or config.get("provider", "mock")
+        if provider_id == "mock":
             return f"{mock_prefix}: {prompt[:500]}"
-        env_name = config.get("api_key_env", "OPENAI_API_KEY")
-        api_key = os.getenv(env_name)
-        if not api_key:
-            raise RuntimeError(f"Configure a variável de ambiente {env_name}.")
-        client = OpenAI(api_key=api_key)
-        response = client.responses.create(
-            model=config.get("model", "gpt-4.1-mini"),
+        if not self.provider_runtime:
+            raise RuntimeError("O gerenciamento visual de provedores não está configurado.")
+        return self.provider_runtime.chat(
+            provider_id=provider_id,
+            workspace_id=workspace_id,
+            model=config.get("model", ""),
             instructions=instructions,
-            input=prompt,
+            prompt=prompt,
             temperature=float(config.get("temperature", 0.2)),
         )
-        return response.output_text
 
     def _execute_node(self, node: Node, state: FlowState) -> dict[str, Any]:
         started = time.perf_counter()
@@ -167,6 +169,7 @@ class WorkflowEngine:
                     config=config,
                     instructions=config.get("system_prompt", "Seja útil."),
                     mock_prefix="Resposta simulada do agente",
+                    workspace_id=state.get("workspace_id", ""),
                 )
                 data["response"] = result
             elif node.type == "agent":
@@ -189,6 +192,7 @@ class WorkflowEngine:
                     config=config,
                     instructions=instructions,
                     mock_prefix=f"Resposta simulada de {role}",
+                    workspace_id=state.get("workspace_id", ""),
                 )
                 data[output_field] = result
             elif node.type == "http":
@@ -292,6 +296,7 @@ class WorkflowEngine:
         workflow: Workflow,
         request: RunRequest,
         entry_node_id: str | None = None,
+        workspace_id: str = "",
     ) -> RunResult:
         started_at = utc_now()
         try:
@@ -303,6 +308,7 @@ class WorkflowEngine:
                     "events": [],
                     "output": {},
                     "session_id": request.session_id,
+                    "workspace_id": workspace_id,
                 }
             )
             output = state.get("output", {}).get("value")

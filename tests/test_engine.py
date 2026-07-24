@@ -131,3 +131,45 @@ def test_multiple_agents_can_pass_results_between_each_other():
     assert result.status == "success"
     assert "Resposta simulada de Revisor" in result.output
     assert "Resposta simulada de Pesquisador" in result.output
+
+
+def test_agent_uses_provider_selected_in_visual_configuration():
+    class FakeProviderRuntime:
+        def __init__(self):
+            self.call = None
+
+        def chat(self, **kwargs):
+            self.call = kwargs
+            return "resposta do provedor visual"
+
+    runtime = FakeProviderRuntime()
+    workflow = Workflow(
+        name="Provedor visual",
+        nodes=[
+            Node(id="in", type="input", name="Entrada"),
+            Node(
+                id="agent",
+                type="agent",
+                name="Especialista",
+                config={
+                    "role": "Especialista",
+                    "provider_id": "prv-visual",
+                    "model": "",
+                    "input_field": "message",
+                    "output_field": "response",
+                },
+            ),
+            Node(id="out", type="output", name="Saída", config={"field": "response"}),
+        ],
+        edges=[Edge(source="in", target="agent"), Edge(source="agent", target="out")],
+    )
+    result = WorkflowEngine(runtime).run(
+        workflow,
+        RunRequest(input={"message": "olá"}),
+        workspace_id="ws-teste",
+    )
+    assert result.status == "success"
+    assert result.output == "resposta do provedor visual"
+    assert runtime.call["provider_id"] == "prv-visual"
+    assert runtime.call["workspace_id"] == "ws-teste"
+    assert runtime.call["prompt"] == "olá"

@@ -9,7 +9,7 @@ Uma ferramenta low-code para criar e executar agentes de IA visualmente. O front
 - Nós de Entrada, Webhook, Prompt, Modelo LLM, Agente IA, Condição, Transformação, HTTP, Memória e Saída.
 - Vários agentes no mesmo workflow, com papéis e campos de entrada/saída independentes.
 - URL de webhook aleatória e persistente para cada nó de gatilho.
-- LLM em modo simulado (funciona sem chave) ou OpenAI real.
+- LLM em modo simulado ou conectado visualmente a provedores reais.
 - Condições com rotas `true` / `false`.
 - Persistência SQLite, versões e histórico de execuções.
 - Playground JSON com resposta e tracing por nó.
@@ -39,14 +39,22 @@ python -m agentic_flow.main
 
 Abra `http://127.0.0.1:8000`. Um workflow de exemplo será criado automaticamente.
 
-Para usar um modelo real:
+## Provedores de IA
 
-```powershell
-$env:OPENAI_API_KEY="sua-chave"
-python -m agentic_flow.main
-```
+Administradores acessam **Configurações → Provedores de IA** pelo ícone de engrenagem no dashboard. Toda a configuração é visual:
 
-No nó **Agente IA** ou **Modelo LLM**, altere o provedor de `mock` para `openai`. A chave não é salva no workflow; apenas o nome da variável de ambiente é persistido.
+- OpenAI;
+- Anthropic;
+- endpoints OpenAI-compatible `/v1`;
+- endpoints Anthropic-compatible;
+- Ollama local;
+- presets para Groq, OpenRouter, Google Gemini e Mistral.
+
+Informe nome, URL base, modelo padrão e API key. A chave é criptografada antes de ser persistida no MySQL e nunca é devolvida para o frontend. O botão **Testar conexão** valida o provedor.
+
+Nos nós **Agente IA** e **Modelo LLM**, basta escolher o provedor pelo nome. O campo de modelo pode ficar vazio para utilizar o modelo padrão do provedor. Não é necessário configurar chaves de modelos no `.env`.
+
+`CREDENTIALS_ENCRYPTION_KEY` é apenas a chave interna da instalação usada para proteger todas as credenciais; ela deve permanecer estável entre redeploys.
 
 Sem `DATABASE_URL` ou `DB_HOST`, o desenvolvimento local usa SQLite em `data/agentic-flow-v2.db`.
 
@@ -64,6 +72,7 @@ No mínimo, defina valores fortes e únicos para:
 MYSQL_PASSWORD=...
 MYSQL_ROOT_PASSWORD=...
 SESSION_SECRET=...
+CREDENTIALS_ENCRYPTION_KEY=...
 ```
 
 Inicie toda a stack:
@@ -125,10 +134,12 @@ agentic_flow/
 ├── engine.py        # validação e compilação LangGraph
 ├── main.py          # API FastAPI e bootstrap
 ├── models.py        # contratos Pydantic
+├── providers.py     # protocolos, presets e criptografia das credenciais
 ├── store.py         # persistência relacional MySQL/SQLite
 ├── ui.py            # componentes declarativos PyReact
 └── static/
     ├── app.js       # interações do canvas
+    ├── providers.js # gerenciamento visual de provedores
     └── styles.css   # sistema visual
 ```
 

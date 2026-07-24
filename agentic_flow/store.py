@@ -82,6 +82,23 @@ class RunRow(Base):
     started_at: Mapped[str] = mapped_column(String(40), nullable=False, index=True)
 
 
+class ProviderRow(Base):
+    __tablename__ = "ai_providers"
+
+    id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    workspace_id: Mapped[str] = mapped_column(
+        String(40), ForeignKey("workspaces.id", ondelete="CASCADE"), index=True
+    )
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    type: Mapped[str] = mapped_column(String(40), nullable=False)
+    base_url: Mapped[str] = mapped_column(String(500), nullable=False)
+    default_model: Mapped[str] = mapped_column(String(160), default="", nullable=False)
+    api_key_encrypted: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    created_at: Mapped[str] = mapped_column(String(40), nullable=False)
+    updated_at: Mapped[str] = mapped_column(String(40), nullable=False)
+
+
 class Store:
     def __init__(self, database: str | Path):
         if isinstance(database, Path) or "://" not in str(database):
@@ -207,6 +224,119 @@ class Store:
                 {**self._user_dict(user), "workspace_role": role}
                 for user, role in rows
             ]
+
+    @staticmethod
+    def _provider_dict(
+        row: ProviderRow, include_secret: bool = False
+    ) -> dict[str, object]:
+        result: dict[str, object] = {
+            "id": row.id,
+            "workspace_id": row.workspace_id,
+            "name": row.name,
+            "type": row.type,
+            "base_url": row.base_url,
+            "default_model": row.default_model,
+            "enabled": row.enabled,
+            "has_api_key": bool(row.api_key_encrypted),
+            "created_at": row.created_at,
+            "updated_at": row.updated_at,
+        }
+        if include_secret:
+            result["api_key_encrypted"] = row.api_key_encrypted
+        return result
+
+    def list_providers(self, workspace_id: str) -> list[dict[str, object]]:
+        with self.Session() as db:
+            rows = db.scalars(
+                select(ProviderRow)
+                .where(ProviderRow.workspace_id == workspace_id)
+                .order_by(ProviderRow.name)
+            ).all()
+            return [self._provider_dict(row) for row in rows]
+
+    def get_provider(
+        self, provider_id: str, workspace_id: str, include_secret: bool = False
+    ) -> dict[str, object] | None:
+        with self.Session() as db:
+            row = db.scalar(
+                select(ProviderRow).where(
+                    ProviderRow.id == provider_id,
+                    ProviderRow.workspace_id == workspace_id,
+                )
+            )
+            return self._provider_dict(row, include_secret) if row else None
+
+    def create_provider(
+        self,
+        *,
+        workspace_id: str,
+        name: str,
+        provider_type: str,
+        base_url: str,
+        default_model: str,
+        api_key_encrypted: str,
+        enabled: bool,
+    ) -> dict[str, object]:
+        now = utc_now()
+        row = ProviderRow(
+            id=f"prv-{uuid4().hex[:12]}",
+            workspace_id=workspace_id,
+            name=name,
+            type=provider_type,
+            base_url=base_url,
+            default_model=default_model,
+            api_key_encrypted=api_key_encrypted,
+            enabled=enabled,
+            created_at=now,
+            updated_at=now,
+        )
+        with self.Session.begin() as db:
+            db.add(row)
+        return self._provider_dict(row)
+
+    def update_provider(
+        self,
+        provider_id: str,
+        workspace_id: str,
+        *,
+        name: str,
+        provider_type: str,
+        base_url: str,
+        default_model: str,
+        api_key_encrypted: str | None,
+        enabled: bool,
+    ) -> dict[str, object] | None:
+        with self.Session.begin() as db:
+            row = db.scalar(
+                select(ProviderRow).where(
+                    ProviderRow.id == provider_id,
+                    ProviderRow.workspace_id == workspace_id,
+                )
+            )
+            if not row:
+                return None
+            row.name = name
+            row.type = provider_type
+            row.base_url = base_url
+            row.default_model = default_model
+            if api_key_encrypted is not None:
+                row.api_key_encrypted = api_key_encrypted
+            row.enabled = enabled
+            row.updated_at = utc_now()
+        return self._provider_dict(row)
+
+    def delete_provider(self, provider_id: str, workspace_id: str) -> bool:
+        with self.Session.begin() as db:
+            row = db.scalar(
+                select(ProviderRow).where(
+                    ProviderRow.id == provider_id,
+                    ProviderRow.workspace_id == workspace_id,
+                )
+            )
+            if not row:
+                return False
+            db.delete(row)
+            return True
 
     def list_workflows(self, workspace_id: str) -> list[Workflow]:
         with self.Session() as db:

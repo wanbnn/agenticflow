@@ -6,6 +6,7 @@
 
   const state = {
     catalog: [],
+    providers: [],
     workflow: null,
     selectedId: null,
     connectFrom: null,
@@ -82,6 +83,11 @@
     return state.catalog.find((item) => item.type === type);
   }
 
+  function providerName(providerId) {
+    if (!providerId || providerId === "mock") return "Simulado";
+    return state.providers.find((item) => item.id === providerId)?.name || "Provedor indisponível";
+  }
+
   function toast(message, tone = "success") {
     const item = document.createElement("div");
     item.className = `toast ${tone}`;
@@ -139,8 +145,8 @@
   }
 
   function nodeSummary(node) {
-    if (node.type === "llm") return `${node.config.provider || "mock"} · ${node.config.model || "modelo"}`;
-    if (node.type === "agent") return `${node.config.role || "Especialista"} · ${node.config.provider || "mock"}`;
+    if (node.type === "llm") return `${providerName(node.config.provider_id || node.config.provider)} · ${node.config.model || "modelo padrão"}`;
+    if (node.type === "agent") return `${node.config.role || "Especialista"} · ${providerName(node.config.provider_id || node.config.provider)}`;
     if (node.type === "webhook") return node.config.webhook_id ? "Endpoint ativo" : "Salve para ativar";
     if (node.type === "prompt") return "Template dinâmico";
     if (node.type === "input") return `campo: ${node.config.field || "message"}`;
@@ -360,7 +366,24 @@
       .map((field) => {
         const value = node.config[field.key] ?? "";
         let control;
-        if (field.type === "webhook_url") {
+        if (field.type === "provider_select") {
+          const selected = node.config[field.key] || node.config.provider || "mock";
+          const options = [
+            { id: "mock", name: "Simulado (sem custo)" },
+            ...state.providers.filter((provider) => provider.enabled),
+          ];
+          control = `<select data-config-key="${field.key}">
+            ${options
+              .map(
+                (provider) =>
+                  `<option value="${escapeHtml(provider.id)}" ${
+                    selected === provider.id ? "selected" : ""
+                  }>${escapeHtml(provider.name)}</option>`
+              )
+              .join("")}
+          </select>
+          <small class="field-help"><a href="/settings/providers">Gerenciar provedores do workspace</a></small>`;
+        } else if (field.type === "webhook_url") {
           const endpoint = value
             ? `${window.location.origin}/webhooks/${value}`
             : "Salve o workflow para gerar a URL";
@@ -391,7 +414,7 @@
       .join("");
     const note =
       node.type === "llm" || node.type === "agent"
-        ? '<div class="provider-note">No modo <strong>mock</strong> o fluxo roda sem credenciais. Para OpenAI, defina a variável informada no ambiente do servidor.</div>'
+        ? '<div class="provider-note">Escolha um provedor cadastrado visualmente. O modelo em branco usa o padrão definido no provedor.</div>'
         : node.type === "webhook"
         ? '<div class="provider-note">A URL é exclusiva deste nó. O corpo JSON recebido vira os dados de entrada e a execução aparece no histórico do workflow.</div>'
         : "";
@@ -689,12 +712,14 @@
   async function init() {
     try {
       const workflowId = document.querySelector(".app-shell")?.dataset.workflowId;
-      const [catalog, workflow] = await Promise.all([
+      const [catalog, workflow, providers] = await Promise.all([
         api("/api/catalog"),
         api(`/api/workflows/${workflowId}`),
+        api("/api/providers"),
       ]);
       state.catalog = catalog;
       state.workflow = workflow;
+      state.providers = providers;
       renderCatalog();
       hydrateWorkflow();
       bindGlobalEvents();

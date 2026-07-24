@@ -435,6 +435,21 @@ def Dashboard(props):
             h(
                 "div",
                 {"className": "user-menu"},
+                *(
+                    [
+                        h(
+                            "a",
+                            {
+                                "className": "icon-button settings-link",
+                                "href": "/settings/providers",
+                                "title": "Provedores de IA",
+                            },
+                            "⚙",
+                        )
+                    ]
+                    if user.get("role") == "admin"
+                    else []
+                ),
                 h("span", {"className": "user-avatar"}, user["name"][:1].upper()),
                 h("div", None, h("strong", None, user["name"]), h("small", None, user["email"])),
                 h("button", {"id": "logout-button", "className": "icon-button", "title": "Sair"}, "↪"),
@@ -545,3 +560,223 @@ def render_dashboard(
         h(Dashboard, {"workflows": workflows, "user": user, "workspace": workspace})
     )
     return _document(body, "Workflows · Agentic Flow", ["/static/dashboard.js"])
+
+
+def ProvidersPage(props):
+    providers = props.get("providers", [])
+    provider_types = props.get("provider_types", [])
+    user = props["user"]
+    workspace = props["workspace"]
+    return h(
+        "div",
+        {"className": "dashboard-shell providers-shell"},
+        h(
+            "header",
+            {"className": "dashboard-topbar"},
+            h(Brand, None),
+            h(
+                "div",
+                {"className": "workspace-switcher"},
+                h("span", {"className": "workspace-avatar"}, workspace["name"][:1].upper()),
+                h("div", None, h("small", None, "WORKSPACE"), h("strong", None, workspace["name"])),
+            ),
+            h(
+                "div",
+                {"className": "user-menu"},
+                h("a", {"className": "button secondary", "href": "/dashboard"}, "← Workflows"),
+                h("span", {"className": "user-avatar"}, user["name"][:1].upper()),
+            ),
+        ),
+        h(
+            "main",
+            {"className": "dashboard-main"},
+            h(
+                "section",
+                {"className": "dashboard-heading"},
+                h(
+                    "div",
+                    None,
+                    h("span", {"className": "auth-kicker"}, "CONFIGURAÇÕES"),
+                    h("h1", None, "Provedores de IA"),
+                    h(
+                        "p",
+                        None,
+                        "Cadastre modelos e credenciais uma vez para todo o workspace.",
+                    ),
+                ),
+                h(
+                    "button",
+                    {"className": "button primary", "id": "new-provider-button"},
+                    h("span", None, "+"),
+                    "Adicionar provedor",
+                ),
+            ),
+            h(
+                "div",
+                {"className": "security-banner"},
+                h("span", {"className": "security-icon"}, "◆"),
+                h(
+                    "div",
+                    None,
+                    h("strong", None, "Credenciais protegidas"),
+                    h(
+                        "p",
+                        None,
+                        "As API keys são criptografadas antes de chegar ao banco e nunca são devolvidas ao navegador.",
+                    ),
+                ),
+            ),
+            h(
+                "section",
+                {"className": "provider-grid", "id": "provider-grid"},
+                *[
+                    h(
+                        "article",
+                        {"className": "provider-card", "data-provider-id": provider["id"]},
+                        h(
+                            "div",
+                            {"className": "provider-card-head"},
+                            h("span", {"className": "provider-logo"}, provider["name"][:2].upper()),
+                            h(
+                                "span",
+                                {
+                                    "className": "provider-status active"
+                                    if provider["enabled"]
+                                    else "provider-status",
+                                },
+                                "Ativo" if provider["enabled"] else "Inativo",
+                            ),
+                        ),
+                        h("h2", None, provider["name"]),
+                        h("p", None, provider["type"].replace("_", " ").title()),
+                        h("code", None, provider["base_url"]),
+                        h(
+                            "div",
+                            {"className": "provider-card-actions"},
+                            h("span", None, "● Chave salva" if provider["has_api_key"] else "○ Sem chave"),
+                            h("button", {"className": "provider-edit", "data-edit-provider": provider["id"]}, "Editar"),
+                        ),
+                    )
+                    for provider in providers
+                ],
+                h(
+                    "button",
+                    {"className": "provider-card provider-new-card", "id": "new-provider-card"},
+                    h("span", {"className": "new-card-plus"}, "+"),
+                    h("strong", None, "Conectar provedor"),
+                    h("small", None, "OpenAI, Anthropic, Ollama e compatíveis"),
+                ),
+            ),
+        ),
+        h(
+            "div",
+            {"className": "modal-backdrop hidden", "id": "provider-modal"},
+            h(
+                "form",
+                {"className": "workflow-modal provider-modal", "id": "provider-form"},
+                h("button", {"type": "button", "className": "modal-close", "id": "provider-modal-close"}, "×"),
+                h("span", {"className": "auth-kicker"}, "PROVEDOR DE IA"),
+                h("h2", {"id": "provider-modal-title"}, "Adicionar provedor"),
+                h("input", {"type": "hidden", "id": "provider-id"}),
+                h(
+                    "div",
+                    {"className": "field"},
+                    h("label", {"htmlFor": "provider-type"}, "Tipo"),
+                    h(
+                        "select",
+                        {"id": "provider-type", "required": True},
+                        *[
+                            h("option", {"value": item["type"]}, item["name"])
+                            for item in provider_types
+                        ],
+                    ),
+                    h("small", {"className": "field-help", "id": "provider-type-help"}),
+                ),
+                h(
+                    "div",
+                    {"className": "field"},
+                    h("label", {"htmlFor": "provider-name"}, "Nome visível"),
+                    h("input", {"id": "provider-name", "required": True}),
+                ),
+                h(
+                    "div",
+                    {"className": "field"},
+                    h("label", {"htmlFor": "provider-base-url"}, "URL base"),
+                    h("input", {"id": "provider-base-url", "required": True}),
+                ),
+                h(
+                    "div",
+                    {"className": "field"},
+                    h("label", {"htmlFor": "provider-model"}, "Modelo padrão"),
+                    h("input", {"id": "provider-model"}),
+                ),
+                h(
+                    "div",
+                    {"className": "field"},
+                    h("label", {"htmlFor": "provider-api-key"}, "API key"),
+                    h(
+                        "input",
+                        {
+                            "id": "provider-api-key",
+                            "type": "password",
+                            "autocomplete": "new-password",
+                            "placeholder": "Cole a chave aqui",
+                        },
+                    ),
+                    h(
+                        "small",
+                        {"className": "field-help"},
+                        "Ao editar, deixe em branco para manter a chave atual.",
+                    ),
+                ),
+                h(
+                    "label",
+                    {"className": "toggle-field"},
+                    h("input", {"id": "provider-enabled", "type": "checkbox", "checked": True}),
+                    h("span", None),
+                    "Provedor ativo",
+                ),
+                h("div", {"className": "auth-error hidden", "id": "provider-error"}),
+                h(
+                    "div",
+                    {"className": "provider-form-actions"},
+                    h(
+                        "button",
+                        {"type": "button", "className": "button danger hidden", "id": "delete-provider"},
+                        "Excluir",
+                    ),
+                    h("span", None),
+                    h(
+                        "button",
+                        {"type": "button", "className": "button secondary hidden", "id": "test-provider"},
+                        "Testar conexão",
+                    ),
+                    h("button", {"className": "button primary", "type": "submit"}, "Salvar"),
+                ),
+            ),
+        ),
+    )
+
+
+def render_providers_page(
+    providers: list[dict],
+    provider_types: list[dict],
+    user: dict[str, object],
+    workspace: dict[str, str],
+) -> str:
+    body = render_to_static_markup(
+        h(
+            ProvidersPage,
+            {
+                "providers": providers,
+                "provider_types": provider_types,
+                "user": user,
+                "workspace": workspace,
+            },
+        )
+    )
+    return _document(
+        body,
+        "Provedores de IA · Agentic Flow",
+        ["/static/providers.js"],
+    )

@@ -16,8 +16,9 @@ from starlette.middleware.sessions import SessionMiddleware
 from .catalog import NODE_CATALOG
 from .engine import WorkflowEngine, validate_workflow
 from .models import Edge, Node, Position, RunRequest, Workflow, WorkflowCreate
+from .providers import PROVIDER_TYPES, PROVIDER_TYPE_MAP, ProviderRuntime
 from .store import Store
-from .ui import render_auth_page, render_dashboard, render_page
+from .ui import render_auth_page, render_dashboard, render_page, render_providers_page
 
 
 PACKAGE_DIR = Path(__file__).resolve().parent
@@ -44,6 +45,22 @@ class LoginPayload(BaseModel):
     password: str
 
 
+class ProviderPayload(BaseModel):
+    name: str = Field(min_length=2, max_length=120)
+    type: str
+    base_url: str = Field(default="", max_length=500)
+    default_model: str = Field(default="", max_length=160)
+    api_key: str = Field(default="", max_length=1000)
+    enabled: bool = True
+
+    @field_validator("type")
+    @classmethod
+    def known_type(cls, value: str) -> str:
+        if value not in PROVIDER_TYPE_MAP:
+            raise ValueError("Tipo de provedor desconhecido.")
+        return value
+
+
 def sample_workflow() -> WorkflowCreate:
     return WorkflowCreate(
         name="Equipe de pesquisa",
@@ -64,12 +81,11 @@ def sample_workflow() -> WorkflowCreate:
                 position=Position(x=640, y=230),
                 config={
                     "role": "Pesquisador",
-                    "provider": "mock",
-                    "model": "gpt-4.1-mini",
+                    "provider_id": "mock",
+                    "model": "",
                     "system_prompt": "Você é um pesquisador objetivo.",
                     "input_field": "prompt",
                     "output_field": "research",
-                    "api_key_env": "OPENAI_API_KEY",
                     "temperature": 0.2,
                 },
             ),
@@ -80,12 +96,11 @@ def sample_workflow() -> WorkflowCreate:
                 position=Position(x=920, y=230),
                 config={
                     "role": "Revisor executivo",
-                    "provider": "mock",
-                    "model": "gpt-4.1-mini",
+                    "provider_id": "mock",
+                    "model": "",
                     "system_prompt": "Revise o material e produza a resposta final.",
                     "input_field": "research",
                     "output_field": "response",
-                    "api_key_env": "OPENAI_API_KEY",
                     "temperature": 0.1,
                 },
             ),
@@ -121,7 +136,12 @@ def create_app(database: str | Path | None = None) -> FastAPI:
     )
     database_target = database or database_from_environment()
     store = Store(database_target)
-    engine = WorkflowEngine()
+    encryption_secret = os.getenv(
+        "CREDENTIALS_ENCRYPTION_KEY",
+        os.getenv("SESSION_SECRET", "dev-only-change-this-session-secret"),
+    )
+    provider_runtime = ProviderRuntime(store, encryption_secret)
+    engine = WorkflowEngine(provider_runtime)
     app.state.store = store
     app.state.engine = engine
     app.add_middleware(
@@ -258,12 +278,125 @@ def create_app(database: str | Path | None = None) -> FastAPI:
         auth_context(request)
         return NODE_CATALOG
 
+    def require_admin(request: Request) -> tuple[dict[str, Any], dict[str, str]]:
+        user, workspace = auth_context(request)
+        if user["role"] != "admin":
+            raise HTTPException(403, "Apenas administradores podem gerenciar provedores.")
+        return user, workspace
+
     @app.get("/api/users")
     def users(request: Request):
         user, workspace = auth_context(request)
         if user["role"] != "admin":
             raise HTTPException(403, "Apenas administradores podem listar usuários.")
         return store.list_users(workspace["id"])
+
+    @app.get("/settings/providers", response_class=HTMLResponse, include_in_schema=False)
+    def providers_page(request: Request):
+        try:
+            user, workspace = require_admin(request)
+        except HTTPException as exc:
+            if exc.status_code == 401:
+                return RedirectResponse("/login", status_code=303)
+            raise
+        return render_providers_page(
+            store.list_providers(workspace["id"]),
+            PROVIDER_TYPES,
+            user,
+            workspace,
+        )
+
+    @app.get("/api/provider-types")
+    def provider_types(request: Request):
+        auth_context(request)
+        return PROVIDER_TYPES
+
+    @app.get("/api/providers")
+    def providers(request: Request):
+        _, workspace = auth_context(request)
+        return store.list_providers(workspace["id"])
+
+    def provider_values(payload: ProviderPayload) -> tuple[str, str]:
+        definition = PROVIDER_TYPE_MAP[payload.type]
+        base_url = (payload.base_url or definition["base_url"]).strip().rstrip("/")
+        default_model = (payload.default_model or definition["default_model"]).strip()
+        if not base_url.startswith(("http://", "https://")):
+            raise HTTPException(422, "A URL base precisa usar http:// ou https://.")
+        if payload.enabled and definition["requires_key"] and not payload.api_key:
+            raise HTTPException(422, "Informe a API key para ativar este provedor.")
+        return base_url, default_model
+
+    @app.post("/api/providers", status_code=201)
+    def create_provider(payload: ProviderPayload, request: Request):
+        _, workspace = require_admin(request)
+        base_url, default_model = provider_values(payload)
+        return store.create_provider(
+            workspace_id=workspace["id"],
+            name=payload.name.strip(),
+            provider_type=payload.type,
+            base_url=base_url,
+            default_model=default_model,
+            api_key_encrypted=provider_runtime.encrypt_key(payload.api_key),
+            enabled=payload.enabled,
+        )
+
+    @app.put("/api/providers/{provider_id}")
+    def update_provider(
+        provider_id: str, payload: ProviderPayload, request: Request
+    ):
+        _, workspace = require_admin(request)
+        current = store.get_provider(provider_id, workspace["id"])
+        if not current:
+            raise HTTPException(404, "Provedor não encontrado.")
+        definition = PROVIDER_TYPE_MAP[payload.type]
+        if (
+            payload.enabled
+            and definition["requires_key"]
+            and not payload.api_key
+            and not current["has_api_key"]
+        ):
+            raise HTTPException(422, "Informe a API key para ativar este provedor.")
+        base_url = (payload.base_url or definition["base_url"]).strip().rstrip("/")
+        if not base_url.startswith(("http://", "https://")):
+            raise HTTPException(422, "A URL base precisa usar http:// ou https://.")
+        return store.update_provider(
+            provider_id,
+            workspace["id"],
+            name=payload.name.strip(),
+            provider_type=payload.type,
+            base_url=base_url,
+            default_model=(payload.default_model or definition["default_model"]).strip(),
+            api_key_encrypted=(
+                provider_runtime.encrypt_key(payload.api_key) if payload.api_key else None
+            ),
+            enabled=payload.enabled,
+        )
+
+    @app.delete("/api/providers/{provider_id}", status_code=204)
+    def delete_provider(provider_id: str, request: Request):
+        _, workspace = require_admin(request)
+        if not store.delete_provider(provider_id, workspace["id"]):
+            raise HTTPException(404, "Provedor não encontrado.")
+        return Response(status_code=204)
+
+    @app.post("/api/providers/{provider_id}/test")
+    def test_provider(provider_id: str, request: Request):
+        _, workspace = require_admin(request)
+        provider = store.get_provider(provider_id, workspace["id"])
+        if not provider:
+            raise HTTPException(404, "Provedor não encontrado.")
+        try:
+            answer = provider_runtime.chat(
+                provider_id=provider_id,
+                workspace_id=workspace["id"],
+                model="",
+                instructions="Responda de forma curta.",
+                prompt="Responda apenas: conexão funcionando",
+                temperature=0,
+            )
+        except Exception as exc:
+            raise HTTPException(422, f"Falha ao conectar: {exc}") from exc
+        return {"status": "ok", "preview": answer[:200]}
 
     @app.get("/api/workflows")
     def workflows(request: Request):
@@ -314,7 +447,7 @@ def create_app(database: str | Path | None = None) -> FastAPI:
         workflow = store.get_workflow(workflow_id, workspace["id"])
         if not workflow:
             raise HTTPException(404, "Workflow não encontrado.")
-        result = engine.run(workflow, payload)
+        result = engine.run(workflow, payload, workspace_id=workspace["id"])
         store.save_run(result, workspace["id"])
         return result
 
@@ -346,6 +479,7 @@ def create_app(database: str | Path | None = None) -> FastAPI:
             workflow,
             RunRequest(input=webhook_input, session_id=f"webhook:{webhook_id}"),
             entry_node_id=trigger_node.id,
+            workspace_id=workspace_id,
         )
         store.save_run(result, workspace_id)
         if trigger_node.config.get("response_mode") == "accepted":

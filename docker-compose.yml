@@ -34,8 +34,8 @@ services:
       DB_USER: agentic
       DB_PASSWORD: ${MYSQL_PASSWORD:-agentic_dev_password}
       SESSION_SECRET: ${SESSION_SECRET:-change-this-session-secret-before-production}
+      CREDENTIALS_ENCRYPTION_KEY: ${CREDENTIALS_ENCRYPTION_KEY:-change-this-encryption-key-before-production}
       COOKIE_SECURE: ${COOKIE_SECURE:-false}
-      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       AGENTIC_FLOW_DATA_DIR: /app/data
     ports:
       - "${AGENTIC_FLOW_PORT:-8000}:8000"

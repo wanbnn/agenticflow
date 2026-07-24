@@ -575,6 +575,7 @@ button { color: inherit; }
 .workspace-switcher small, .user-menu small { display: block; color: var(--muted-2); font-size: 8px; letter-spacing: .8px; }
 .workspace-switcher strong, .user-menu strong { display: block; margin-top: 2px; font-size: 11px; }
 .user-menu { justify-self: end; }
+.settings-link { text-decoration: none; }
 .user-menu > div { min-width: 110px; }
 .dashboard-main { width: min(1180px, calc(100% - 60px)); margin: 0 auto; padding: 54px 0 80px; }
 .dashboard-heading { display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 30px; }
@@ -608,6 +609,33 @@ button { color: inherit; }
 .workflow-modal h2 { margin: 9px 0 24px; font: 700 21px "Manrope", sans-serif; }
 .modal-close { position: absolute; top: 14px; right: 14px; border: 0; background: transparent; color: var(--muted); font-size: 21px; cursor: pointer; }
 
+/* AI providers */
+.security-banner { display: flex; align-items: center; gap: 13px; margin: -8px 0 24px; padding: 14px 16px; border: 1px solid #34304c; border-radius: 11px; background: rgba(118,87,255,.06); }
+.security-icon { width: 32px; height: 32px; display: grid; place-items: center; border-radius: 8px; background: rgba(118,87,255,.15); color: #a793ff; }
+.security-banner strong { font-size: 11px; }
+.security-banner p { margin: 3px 0 0; color: var(--muted); font-size: 9px; }
+.provider-grid { display: grid; grid-template-columns: repeat(3,minmax(240px,1fr)); gap: 16px; }
+.provider-card { min-height: 210px; padding: 18px; border: 1px solid var(--line); border-radius: 13px; background: linear-gradient(145deg,#18181f,#141419); color: var(--text); text-align: left; }
+.provider-card-head { display: flex; justify-content: space-between; align-items: center; }
+.provider-logo { width: 40px; height: 40px; display: grid; place-items: center; border-radius: 10px; background: linear-gradient(145deg,#7d61ff,#5b41d5); font-size: 10px; font-weight: 800; }
+.provider-status { padding: 4px 8px; border-radius: 12px; background: #24232b; color: var(--muted); font-size: 8px; }
+.provider-status.active { background: rgba(74,222,128,.1); color: var(--green); }
+.provider-card h2 { margin: 18px 0 5px; font: 600 14px "Manrope",sans-serif; }
+.provider-card > p { margin: 0 0 12px; color: var(--muted); font-size: 9px; }
+.provider-card code { display: block; height: 28px; overflow: hidden; color: #938eaa; font-size: 8px; white-space: nowrap; text-overflow: ellipsis; }
+.provider-card-actions { display: flex; justify-content: space-between; align-items: center; margin-top: 13px; padding-top: 11px; border-top: 1px solid var(--line-soft); color: var(--muted-2); font-size: 8px; }
+.provider-edit { border: 0; background: transparent; color: #aa99ff; font-size: 9px; cursor: pointer; }
+.provider-new-card { display: flex; flex-direction: column; align-items: center; justify-content: center; border-style: dashed; cursor: pointer; }
+.provider-new-card strong { font-size: 11px; }
+.provider-new-card small { margin-top: 6px; color: var(--muted); font-size: 8px; }
+.provider-modal { max-height: calc(100vh - 30px); overflow-y: auto; }
+.provider-modal .field { margin-bottom: 12px; }
+.toggle-field { display: flex; align-items: center; gap: 9px; margin: 5px 0 15px; color: #c5c2cc; font-size: 10px; cursor: pointer; }
+.toggle-field input { width: 15px; height: 15px; accent-color: var(--purple); }
+.provider-form-actions { display: grid; grid-template-columns: auto 1fr auto auto; gap: 8px; margin-top: 12px; }
+.button.danger { background: rgba(251,113,133,.08); border-color: #63313a; color: #ff94a5; }
+.provider-success { border-color: #265b3a; background: rgba(74,222,128,.08); color: var(--green); }
+
 @media (max-width: 800px) {
   .auth-shell { grid-template-columns: 1fr; }
   .auth-visual { display: none; }
@@ -616,5 +644,6 @@ button { color: inherit; }
   .dashboard-topbar .brand { padding: 0 12px; }
   .dashboard-topbar .brand > div:last-child, .user-menu > div { display: none; }
   .workflow-grid { grid-template-columns: 1fr; }
+  .provider-grid { grid-template-columns: 1fr; }
   .dashboard-main { width: calc(100% - 32px); padding-top: 32px; }
 }

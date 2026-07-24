@@ -182,3 +182,66 @@ def test_dashboard_can_create_multiple_empty_workflows(tmp_path):
     assert second.status_code == 201
     names = {workflow["name"] for workflow in client.get("/api/workflows").json()}
     assert {"Equipe de pesquisa", "Atendimento", "Vendas"}.issubset(names)
+
+
+def test_admin_manages_visual_ai_providers_without_exposing_key(tmp_path):
+    app = create_app(tmp_path / "test.db")
+    client = TestClient(app)
+    context = bootstrap(client)
+
+    created = client.post(
+        "/api/providers",
+        json={
+            "name": "Minha API compatível",
+            "type": "openai_compatible",
+            "base_url": "https://llm.example.com/v1",
+            "default_model": "modelo-local",
+            "api_key": "chave-super-secreta",
+            "enabled": True,
+        },
+    )
+    assert created.status_code == 201
+    provider = created.json()
+    assert provider["has_api_key"] is True
+    assert "api_key" not in provider
+    assert "api_key_encrypted" not in provider
+
+    stored = app.state.store.get_provider(
+        provider["id"], context["workspace"]["id"], include_secret=True
+    )
+    assert stored["api_key_encrypted"] != "chave-super-secreta"
+    assert "chave-super-secreta" not in stored["api_key_encrypted"]
+
+    updated = client.put(
+        f"/api/providers/{provider['id']}",
+        json={
+            "name": "Minha API renomeada",
+            "type": "openai_compatible",
+            "base_url": "https://llm.example.com/v1",
+            "default_model": "modelo-local",
+            "api_key": "",
+            "enabled": True,
+        },
+    )
+    assert updated.status_code == 200
+    assert updated.json()["has_api_key"] is True
+    assert client.get("/settings/providers").status_code == 200
+    assert "Minha API renomeada" in client.get("/settings/providers").text
+
+
+def test_ollama_provider_does_not_require_api_key(tmp_path):
+    client = TestClient(create_app(tmp_path / "test.db"))
+    bootstrap(client)
+    response = client.post(
+        "/api/providers",
+        json={
+            "name": "Ollama local",
+            "type": "ollama",
+            "base_url": "http://host.docker.internal:11434/v1",
+            "default_model": "llama3.2",
+            "api_key": "",
+            "enabled": True,
+        },
+    )
+    assert response.status_code == 201
+    assert response.json()["has_api_key"] is False
