@@ -1,154 +1,302 @@
+<div align="center">
+
 # Agentic Flow
 
-Uma ferramenta low-code para criar e executar agentes de IA visualmente. O frontend é declarado com **PyReact**, a API usa **FastAPI** e cada canvas é compilado dinamicamente para um **LangGraph `StateGraph`**.
+### Crie, conecte e execute equipes de agentes de IA sem escrever código.
 
-## O que está pronto
+Uma plataforma low-code para construir workflows multiagente, integrar modelos,
+receber webhooks e acompanhar cada execução visualmente.
 
-- Editor visual com arrastar e soltar, conexões, zoom, minimapa e auto-layout.
-- Inspetor de propriedades gerado pelo schema de cada tipo de nó.
-- Nós de Entrada, Webhook, Prompt, Modelo LLM, Agente IA, Condição, Transformação, HTTP, Memória e Saída.
-- Vários agentes no mesmo workflow, com papéis e campos de entrada/saída independentes.
-- URL de webhook aleatória e persistente para cada nó de gatilho.
-- LLM em modo simulado ou conectado visualmente a provedores reais.
-- Condições com rotas `true` / `false`.
-- Persistência SQLite, versões e histórico de execuções.
-- Playground JSON com resposta e tracing por nó.
-- Validação de referências, tipos, ciclos e ramificações.
-- API documentada automaticamente em `/docs`.
+[![CI](https://github.com/wanbnn/agenticflow/actions/workflows/ci.yml/badge.svg)](https://github.com/wanbnn/agenticflow/actions/workflows/ci.yml)
+[![Python](https://img.shields.io/badge/Python-3.11%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
+[![PyReact](https://img.shields.io/badge/UI-PyReact-7C5CFF)](https://github.com/wanbnn/pyreact)
+[![LangGraph](https://img.shields.io/badge/Agents-LangGraph-1C3C3C)](https://github.com/langchain-ai/langgraph)
+[![FastAPI](https://img.shields.io/badge/API-FastAPI-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
+[![MySQL](https://img.shields.io/badge/Database-MySQL%208.4-4479A1?logo=mysql&logoColor=white)](https://www.mysql.com/)
+[![Docker](https://img.shields.io/badge/Deploy-Docker-2496ED?logo=docker&logoColor=white)](https://www.docker.com/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![GitHub stars](https://img.shields.io/github/stars/wanbnn/agenticflow?style=flat&logo=github)](https://github.com/wanbnn/agenticflow/stargazers)
+[![GitHub issues](https://img.shields.io/github/issues/wanbnn/agenticflow)](https://github.com/wanbnn/agenticflow/issues)
 
-## Primeiro acesso e autenticação
+[Início rápido](#-início-rápido-com-docker) ·
+[Recursos](#-recursos) ·
+[Arquitetura](#-arquitetura) ·
+[Contribuir](CONTRIBUTING.md) ·
+[Segurança](SECURITY.md)
 
-Na primeira inicialização, `http://127.0.0.1:8000` redireciona obrigatoriamente para `/setup`. Crie:
+</div>
 
-- o usuário administrador;
-- a senha inicial;
-- o primeiro workspace.
+---
 
-Depois disso, a configuração inicial é desativada e os próximos acessos exigem login. A sessão é armazenada em cookie assinado, com validade de 14 dias. Workflows e execuções só podem ser acessados por membros do workspace correspondente.
+## Por que Agentic Flow?
 
-Após o login, `/dashboard` lista todos os workflows e permite criar novos canvases independentes. O editor agora fica em `/workflows/{id}`.
+Ferramentas tradicionais de automação conectam tarefas. O Agentic Flow foi
+desenhado para conectar **agentes**, **modelos**, **memória**, **decisões** e
+**ferramentas externas** em uma experiência visual acessível também a quem não
+programa.
 
-## Executar localmente
+- Arraste nós para o canvas e conecte as etapas.
+- Crie quantos agentes precisar em um mesmo workflow.
+- Configure provedores e chaves pela interface.
+- Publique entradas por webhook com URL exclusiva.
+- Teste com dados reais e acompanhe o tracing por nó.
+- Separe projetos e usuários por workspace.
 
-O ambiente atual já contém o PyReact. Instale o projeto e inicie:
+## ✨ Recursos
 
-```powershell
-python -m pip install -e .
-python -m agentic_flow.main
+| Área | Capacidades |
+| --- | --- |
+| Editor visual | Drag-and-drop, conexões, zoom, minimapa, auto-layout, undo/redo e inspetor |
+| Multiagente | Papéis independentes, prompts, campos de entrada/saída e colaboração sequencial ou ramificada |
+| Nós | Entrada, Webhook, Prompt, Modelo LLM, Agente IA, Condição, Transformação, HTTP, Memória e Saída |
+| Provedores | OpenAI, Anthropic, Ollama, Groq, OpenRouter, Gemini, Mistral e APIs compatíveis |
+| Segurança | Bootstrap do admin, login, sessões assinadas, isolamento por workspace e credenciais criptografadas |
+| Operação | MySQL, histórico de runs, healthcheck, volumes Docker e API OpenAPI em `/docs` |
+| Integrações | Webhooks persistentes e requisições HTTP para serviços externos |
+
+## 🚀 Início rápido com Docker
+
+> [!IMPORTANT]
+> **Você não precisa instalar Python, PyReact, LangGraph, FastAPI, MySQL,
+> bibliotecas Python ou ferramentas de build no computador.** O Dockerfile
+> instala automaticamente todo o ambiente da aplicação, enquanto o Compose
+> configura o MySQL e a rede entre os serviços.
+
+### Pré-requisitos
+
+Somente:
+
+- [Git](https://git-scm.com/);
+- [Docker](https://docs.docker.com/get-docker/) com Docker Compose.
+
+### 1. Clone e configure
+
+```bash
+git clone https://github.com/wanbnn/agenticflow.git
+cd agenticflow
+cp .env.example .env
 ```
 
-Abra `http://127.0.0.1:8000`. Um workflow de exemplo será criado automaticamente.
+No PowerShell, use `Copy-Item .env.example .env`.
 
-## Provedores de IA
-
-Administradores acessam **Configurações → Provedores de IA** pelo ícone de engrenagem no dashboard. Toda a configuração é visual:
-
-- OpenAI;
-- Anthropic;
-- endpoints OpenAI-compatible `/v1`;
-- endpoints Anthropic-compatible;
-- Ollama local;
-- presets para Groq, OpenRouter, Google Gemini e Mistral.
-
-Informe nome, URL base, modelo padrão e API key. A chave é criptografada antes de ser persistida no MySQL e nunca é devolvida para o frontend. O botão **Testar conexão** valida o provedor.
-
-Nos nós **Agente IA** e **Modelo LLM**, basta escolher o provedor pelo nome. O campo de modelo pode ficar vazio para utilizar o modelo padrão do provedor. Não é necessário configurar chaves de modelos no `.env`.
-
-`CREDENTIALS_ENCRYPTION_KEY` é apenas a chave interna da instalação usada para proteger todas as credenciais; ela deve permanecer estável entre redeploys.
-
-Sem `DATABASE_URL` ou `DB_HOST`, o desenvolvimento local usa SQLite em `data/agentic-flow-v2.db`.
-
-## Docker e MySQL
-
-Copie as configurações e troque todas as senhas:
-
-```powershell
-Copy-Item .env.example .env
-```
-
-No mínimo, defina valores fortes e únicos para:
+Troque os valores abaixo no `.env` antes de expor a instalação:
 
 ```dotenv
-MYSQL_PASSWORD=...
-MYSQL_ROOT_PASSWORD=...
-SESSION_SECRET=...
-CREDENTIALS_ENCRYPTION_KEY=...
+MYSQL_PASSWORD=uma-senha-forte
+MYSQL_ROOT_PASSWORD=outra-senha-forte
+SESSION_SECRET=uma-string-aleatoria-longa
+CREDENTIALS_ENCRYPTION_KEY=outra-string-aleatoria-longa
+COOKIE_SECURE=false
 ```
 
-Inicie toda a stack:
+### 2. Suba a plataforma
 
-```powershell
+```bash
 docker compose up -d --build
 docker compose ps
 ```
 
-O Compose sobe:
+O build instala no container:
 
-- `agentic-flow`: aplicação FastAPI/PyReact na porta `8000`;
-- `mysql`: MySQL 8.4 com healthcheck e UTF-8 completo.
+- Python 3.12 e pip;
+- PyReact;
+- FastAPI e Uvicorn;
+- LangGraph e LangChain Core;
+- SQLAlchemy e PyMySQL;
+- SDK da OpenAI e clientes HTTP;
+- criptografia, autenticação e todas as dependências do `pyproject.toml`.
 
-Os volumes nomeados persistem fora dos containers:
+O Compose também baixa e configura o **MySQL 8.4**, cria o banco
+`agentic_flow`, aplica healthchecks e só inicia a aplicação quando o banco
+estiver saudável.
 
-- `agentic_flow_mysql_data`: usuários, workspaces, memberships, workflows e runs;
-- `agentic_flow_app_data`: dados auxiliares da aplicação.
+### 3. Crie o administrador
 
-Assim, `docker compose down` e novos builds não removem os dados. Para remover tudo deliberadamente seria necessário executar `docker compose down -v`.
+Abra [http://127.0.0.1:8000](http://127.0.0.1:8000).
 
-Em produção com HTTPS, configure também:
+No primeiro acesso, o sistema redireciona obrigatoriamente para `/setup`.
+Crie o administrador e o primeiro workspace. Depois do bootstrap, todos os
+acessos exigem login.
+
+> [!TIP]
+> Para acompanhar a inicialização, execute
+> `docker compose logs -f agentic-flow`.
+
+## 💾 Persistência e redeploy
+
+O Compose cria dois volumes nomeados:
+
+| Volume | Conteúdo |
+| --- | --- |
+| `agentic_flow_mysql_data` | Usuários, workspaces, memberships, provedores, workflows e execuções |
+| `agentic_flow_app_data` | Dados auxiliares da aplicação |
+
+Rebuilds, atualizações de imagem e `docker compose down` **não apagam os
+dados**. O comando `docker compose down -v` remove deliberadamente os volumes e
+deve ser usado somente quando a intenção for apagar a instalação.
+
+Para produção com HTTPS:
 
 ```dotenv
 COOKIE_SECURE=true
 ```
 
-## Webhooks
+Mantenha `SESSION_SECRET` e `CREDENTIALS_ENCRYPTION_KEY` estáveis entre
+redeploys. A troca da chave de criptografia sem migração impede a leitura das
+API keys armazenadas.
 
-Arraste o nó **Webhook** para o canvas, conecte-o ao primeiro agente e salve. O inspetor exibirá uma URL exclusiva:
+## 🧠 Provedores de IA
+
+O administrador configura tudo em **Configurações → Provedores de IA**:
+
+- OpenAI e Anthropic oficiais;
+- OpenAI-compatible `/v1`;
+- Anthropic-compatible;
+- Ollama local;
+- presets de Groq, OpenRouter, Google Gemini e Mistral.
+
+Informe nome, URL base, modelo padrão e API key. As chaves são criptografadas
+antes de chegar ao MySQL e nunca retornam ao navegador. Nos nós **Agente IA** e
+**Modelo LLM**, o usuário apenas seleciona o provedor pelo nome.
+
+Não é necessário colocar chaves de modelos no `.env`.
+
+## 🪝 Webhooks
+
+Ao salvar um nó **Webhook**, o Agentic Flow gera uma URL aleatória e persistente:
 
 ```text
-http://127.0.0.1:8000/webhooks/wh_TOKEN_ALEATORIO
+https://seu-dominio.example/webhooks/wh_TOKEN_ALEATORIO
 ```
 
-Qualquer ferramenta externa pode iniciar aquele workflow com:
+Envie qualquer objeto JSON por `POST`:
 
-```powershell
-Invoke-RestMethod `
-  -Method Post `
-  -ContentType "application/json" `
-  -Uri "http://127.0.0.1:8000/webhooks/wh_TOKEN_ALEATORIO" `
-  -Body '{"message":"Nova mensagem externa"}'
+```bash
+curl -X POST \
+  -H "Content-Type: application/json" \
+  -d '{"message":"Nova mensagem externa"}' \
+  https://seu-dominio.example/webhooks/wh_TOKEN_ALEATORIO
 ```
 
-O JSON recebido é disponibilizado diretamente aos agentes. Cada URL inicia somente o nó de gatilho e o workflow associados, e a execução fica salva no histórico.
+O JSON torna-se a entrada do workflow, a execução começa exatamente naquele
+gatilho e o resultado fica registrado no histórico.
 
-## Testes
+## 🏗 Arquitetura
 
-```powershell
-pytest
+```mermaid
+flowchart LR
+    U["Usuário / Admin"] -->|HTTPS| UI["PyReact UI"]
+    EXT["Ferramentas externas"] -->|Webhook| API["FastAPI"]
+    UI --> API
+    API --> AUTH["Auth + Workspaces"]
+    API --> ENGINE["Workflow Engine"]
+    ENGINE --> LG["LangGraph StateGraph"]
+    LG --> PROVIDERS["Provedores de IA"]
+    LG --> TOOLS["HTTP / Memória / Condições"]
+    AUTH --> DB[("MySQL 8.4")]
+    ENGINE --> DB
+    PROVIDERS --> DB
+
+    classDef core fill:#7657ff,color:#fff,stroke:#9b87ff;
+    classDef data fill:#126b62,color:#fff,stroke:#2dd4bf;
+    class UI,API,ENGINE,LG core;
+    class DB data;
 ```
 
-## Estrutura
+### Fluxo de execução
+
+```mermaid
+sequenceDiagram
+    participant Trigger as Entrada/Webhook
+    participant API as FastAPI
+    participant Graph as LangGraph
+    participant Agent as Agente IA
+    participant Provider as Provedor
+    participant DB as MySQL
+
+    Trigger->>API: JSON de entrada
+    API->>Graph: Compila e inicia o workflow
+    Graph->>Agent: Estado + prompt
+    Agent->>Provider: Chat completion/messages
+    Provider-->>Agent: Resposta do modelo
+    Agent-->>Graph: Estado atualizado
+    Graph->>DB: Eventos, duração e resultado
+    Graph-->>API: Saída final
+    API-->>Trigger: Resposta HTTP
+```
+
+## 🗂 Estrutura do projeto
 
 ```text
 agentic_flow/
-├── catalog.py       # catálogo/schema dos nós
-├── engine.py        # validação e compilação LangGraph
-├── main.py          # API FastAPI e bootstrap
+├── catalog.py       # catálogo e schema dos nós
+├── engine.py        # compilação e execução LangGraph
+├── main.py          # API, auth e rotas
 ├── models.py        # contratos Pydantic
-├── providers.py     # protocolos, presets e criptografia das credenciais
-├── store.py         # persistência relacional MySQL/SQLite
+├── providers.py     # protocolos e criptografia de credenciais
+├── store.py         # persistência MySQL/SQLite via SQLAlchemy
 ├── ui.py            # componentes declarativos PyReact
-└── static/
-    ├── app.js       # interações do canvas
-    ├── providers.js # gerenciamento visual de provedores
-    └── styles.css   # sistema visual
+└── static/          # canvas, dashboard, auth, provedores e estilos
 ```
 
-`store.py` usa SQLAlchemy e funciona com MySQL em deploy e SQLite no desenvolvimento/testes.
+## 🧪 Desenvolvimento e testes
 
-## Como adicionar um nó
+O caminho recomendado continua sendo Docker. Para desenvolvimento nativo
+opcional, use Python 3.11+:
 
-1. Inclua sua definição em `NODE_CATALOG`, com campos e valores padrão.
-2. Implemente o executor correspondente em `WorkflowEngine._execute_node`.
-3. Adicione um teste de execução.
+```bash
+python -m pip install -e ".[dev]"
+python -m pytest
+python -m agentic_flow.main
+```
 
-O mesmo catálogo alimenta a barra lateral, o inspetor, a validação e a execução, evitando configurações duplicadas entre UI e backend.
+Sem MySQL configurado, o modo nativo utiliza SQLite em
+`data/agentic-flow-v2.db`. A aplicação fica em `http://127.0.0.1:8000` e a
+documentação da API em `http://127.0.0.1:8000/docs`.
+
+## 🧩 Criando um novo tipo de nó
+
+1. Adicione a definição e os campos em `NODE_CATALOG`.
+2. Implemente o executor em `WorkflowEngine._execute_node`.
+3. Inclua testes unitários e de integração.
+4. Atualize a documentação quando houver comportamento público novo.
+
+O mesmo catálogo alimenta sidebar, inspetor, validação e execução, reduzindo
+divergências entre frontend e backend.
+
+## 🤝 Comunidade
+
+Antes de participar, consulte:
+
+- [Guia de contribuição](CONTRIBUTING.md)
+- [Código de conduta](CODE_OF_CONDUCT.md)
+- [Política de segurança](SECURITY.md)
+- [Suporte](SUPPORT.md)
+- [Governança](GOVERNANCE.md)
+- [Changelog](CHANGELOG.md)
+
+### Colaboradores
+
+<a href="https://github.com/wanbnn/agenticflow/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=wanbnn/agenticflow" alt="Colaboradores do Agentic Flow" />
+</a>
+
+### Histórico de estrelas
+
+[![Star History Chart](https://api.star-history.com/svg?repos=wanbnn/agenticflow&type=Date)](https://star-history.com/#wanbnn/agenticflow&Date)
+
+<sub>Badges e gráficos fornecidos por serviços externos são renderizados quando
+o repositório está público e pode ser consultado por esses serviços.</sub>
+
+## 📄 Licença
+
+Distribuído sob a licença MIT. Consulte [LICENSE](LICENSE).
+
+---
+
+<div align="center">
+
+Se o Agentic Flow for útil para você, considere deixar uma
+[⭐ estrela](https://github.com/wanbnn/agenticflow).
+
+</div>

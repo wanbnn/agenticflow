@@ -1,0 +1,49 @@
+name: Sugerir uma funcionalidade
+description: Proponha uma melhoria para o Agentic Flow.
+title: "[Feature]: "
+labels: ["enhancement", "triage"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problema
+      description: Que dificuldade de usuário esta proposta resolve?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Solução proposta
+      description: Descreva a experiência ideal, especialmente para usuários não técnicos.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternativas consideradas
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Área
+      options:
+        - Editor visual
+        - Nós e gatilhos
+        - Provedores de IA
+        - Workspaces e autenticação
+        - Execução e observabilidade
+        - Docker e operação
+        - Documentação
+        - Outra
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Verificações
+      options:
+        - label: Pesquisei propostas existentes.
+          required: true

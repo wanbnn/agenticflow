@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Discussões e dúvidas
+    url: https://github.com/wanbnn/agenticflow/discussions
+    about: Peça ajuda ou compartilhe ideias com a comunidade.
+  - name: Relatar vulnerabilidade
+    url: https://github.com/wanbnn/agenticflow/security/advisories/new
+    about: Use o canal privado para questões de segurança.

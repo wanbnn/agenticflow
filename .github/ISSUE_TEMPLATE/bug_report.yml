@@ -1,0 +1,65 @@
+name: Relatar um bug
+description: Informe um problema reproduzível no Agentic Flow.
+title: "[Bug]: "
+labels: ["bug", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Obrigado pelo relato. Remova API keys, senhas, cookies e dados pessoais.
+
+  - type: input
+    id: version
+    attributes:
+      label: Versão ou commit
+      placeholder: v0.2.0 ou SHA
+    validations:
+      required: true
+
+  - type: dropdown
+    id: install
+    attributes:
+      label: Forma de instalação
+      options:
+        - Docker Compose
+        - Python local
+        - Outra
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Descrição
+      description: O que aconteceu e qual era o comportamento esperado?
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Passos para reproduzir
+      placeholder: |
+        1. Abra...
+        2. Crie...
+        3. Execute...
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs sanitizados
+      render: shell
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Verificações
+      options:
+        - label: Pesquisei issues existentes.
+          required: true
+        - label: Removi segredos e dados pessoais.
+          required: true
+        - label: Este relato não é uma vulnerabilidade de segurança.
+          required: true
