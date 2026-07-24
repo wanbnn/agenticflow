@@ -103,7 +103,7 @@ O build instala no container:
 - FastAPI e Uvicorn;
 - LangGraph e LangChain Core;
 - SQLAlchemy e PyMySQL;
-- SDK da OpenAI e clientes HTTP;
+- clientes HTTP nativos para protocolos OpenAI e Anthropic;
 - criptografia, autenticação e todas as dependências do `pyproject.toml`.
 
 O Compose também baixa e configura o **MySQL 8.4**, cria o banco

@@ -19,6 +19,8 @@ projeto adota [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 - favicon da aplicação, evitando respostas 404 nos acessos.
 - bloqueio de endpoints OpenAI-compatible protegidos por Cloudflare devido ao
   `User-Agent` padrão do SDK.
+- respostas HTTP 419 em APIs compatíveis, removendo headers automáticos
+  `x-stainless-*` e usando transporte HTTP mínimo.
 
 ## [0.2.0] - 2026-07-24
 
