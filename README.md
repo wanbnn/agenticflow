@@ -49,7 +49,7 @@ programa.
 | --- | --- |
 | Editor visual | Drag-and-drop, conexões, zoom, minimapa, auto-layout, undo/redo e inspetor |
 | Multiagente | Papéis independentes, prompts, campos de entrada/saída e colaboração sequencial ou ramificada |
-| Nós | Entrada, Webhook, Prompt, LLM, Agente, Banco de Vetores, RAG, Condição, Documentos, Imagens, Vídeo para frames, Transformação, HTTP, Memória e Saída |
+| Nós | Entrada, Webhook, Prompt, LLM, Agente, Banco de Vetores, RAG, MCP Server, Condição, Documentos, Imagens, Vídeo para frames, Transformação, HTTP, Memória e Saída |
 | Templates | Biblioteca de workflows prontos para documentos, imagens, vídeos, atendimento e pipelines multiagente |
 | Conhecimento | Banco de Vetores nativo por nó, ingestão persistente, busca semântica local e RAG conectado a agentes |
 | Provedores | OpenAI, Anthropic, Ollama, Groq, OpenRouter, Gemini, Mistral e APIs compatíveis |
@@ -85,6 +85,22 @@ e publica `rag_context` e `rag_matches` para as próximas etapas. Também é
 possível selecionar o Banco de Vetores diretamente no inspetor de um
 **Agente IA**; nesse caso, o agente recupera e incorpora o contexto
 automaticamente antes de chamar o modelo.
+
+### Alças tipadas e ferramentas
+
+As conexões do canvas distinguem dois comportamentos:
+
+- **input/output:** controlam a ordem normal de execução do workflow;
+- **database/tool/tools:** conectam recursos ao agente sem transformá-los em
+  etapas sequenciais.
+
+Para disponibilizar RAG a um agente, conecte `database` do Banco de Vetores em
+`database` do RAG e conecte `tool` do RAG em `tools` do Agente IA. Para
+ferramentas externas, configure um nó **MCP Server** com um endpoint Streamable
+HTTP e conecte sua alça `tool` em `tools` do agente. O cliente negocia o
+protocolo MCP, descobre `tools/list`, escolhe a ferramenta compatível com a
+consulta e a executa com `tools/call`; o resultado passa a compor o contexto do
+agente.
 
 ## 🚀 Início rápido com Docker
 

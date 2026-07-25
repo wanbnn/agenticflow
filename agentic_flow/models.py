@@ -29,6 +29,7 @@ class Edge(BaseModel):
     source: str
     target: str
     source_handle: str = "default"
+    target_handle: str = "input"
 
 
 class WorkflowCreate(BaseModel):
@@ -74,4 +75,3 @@ class RunResult(BaseModel):
     error: str | None = None
     started_at: str = Field(default_factory=utc_now)
     finished_at: str = Field(default_factory=utc_now)
-

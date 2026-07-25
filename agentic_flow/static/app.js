@@ -88,6 +88,26 @@
     return state.catalog.find((item) => item.type === type);
   }
 
+  function nodePorts(node, direction) {
+    const meta = catalogItem(node.type) || {};
+    if (direction === "input") {
+      return meta.inputs === undefined
+        ? [{ id: "input", label: "entrada", kind: "flow", multiple: true }]
+        : meta.inputs;
+    }
+    if (meta.outputs) return meta.outputs;
+    return (meta.handles || ["default"]).map((id) => ({
+      id,
+      label: id === "default" ? "saída" : id,
+      kind: "flow",
+    }));
+  }
+
+  function portOffset(ports, index) {
+    if (ports.length === 1) return 45;
+    return 29 + index * 34;
+  }
+
   function can(permission) {
     return Boolean(state.permissions?.[permission]);
   }
@@ -175,7 +195,12 @@
 
   function nodeSummary(node) {
     if (node.type === "llm") return `${providerName(node.config.provider_id || node.config.provider)} · ${node.config.model || "modelo padrão"}`;
-    if (node.type === "agent") return `${node.config.role || "Especialista"} · ${providerName(node.config.provider_id || node.config.provider)}`;
+    if (node.type === "agent") {
+      const tools = state.workflow?.edges.filter(
+        (edge) => edge.target === node.id && edge.target_handle === "tools"
+      ).length || 0;
+      return `${node.config.role || "Especialista"} · ${tools} ${tools === 1 ? "tool" : "tools"}`;
+    }
     if (node.type === "webhook") return node.config.webhook_id ? "Endpoint ativo" : "Salve para ativar";
     if (node.type === "prompt") return "Template dinâmico";
     if (node.type === "file") return `${String(node.config.format || "auto").toUpperCase()} · ${node.config.output_field || "document_text"}`;
@@ -183,9 +208,13 @@
     if (node.type === "video_frames") return `a cada ${node.config.interval_seconds || 1}s · até ${node.config.max_frames || 12} frames`;
     if (node.type === "vector_database") return `${node.config.write_mode || "append"} · base isolada`;
     if (node.type === "rag") {
-      const database = state.workflow?.nodes.find((item) => item.id === node.config.vector_db_node_id);
+      const databaseEdge = state.workflow?.edges.find(
+        (edge) => edge.target === node.id && edge.target_handle === "database"
+      );
+      const database = state.workflow?.nodes.find((item) => item.id === databaseEdge?.source);
       return database ? `busca em ${database.name}` : "selecione uma base";
     }
+    if (node.type === "mcp_server") return node.config.url || "configure o endpoint";
     if (node.type === "input") return `campo: ${node.config.field || "message"}`;
     if (node.type === "output") return `retorna: ${node.config.field || "response"}`;
     if (node.type === "http") return `${node.config.method || "GET"} · API`;
@@ -199,20 +228,32 @@
     dom.nodes.innerHTML = state.workflow.nodes
       .map((node) => {
         const meta = catalogItem(node.type) || { color: "#7657ff", icon: "?", description: "" };
-        const conditionHandles =
-          node.type === "condition"
-            ? `
-              <span class="handle output true" data-handle="true" title="Saída verdadeira"></span>
-              <span class="handle-label true">sim</span>
-              <span class="handle output false" data-handle="false" title="Saída falsa"></span>
-              <span class="handle-label false">não</span>`
-            : `<span class="handle output" data-handle="default" title="Criar conexão"></span>`;
+        const inputs = nodePorts(node, "input");
+        const outputs = nodePorts(node, "output");
+        const inputHandles = inputs
+          .map((port, index) => {
+            const top = portOffset(inputs, index);
+            return `<span class="handle input port-${escapeHtml(port.kind)}"
+              style="top:${top}px" data-direction="input" data-kind="${escapeHtml(port.kind)}"
+              data-handle="${escapeHtml(port.id)}" title="${escapeHtml(port.label)}"></span>
+              <span class="port-label input-label" style="top:${top - 6}px">${escapeHtml(port.label)}</span>`;
+          })
+          .join("");
+        const outputHandles = outputs
+          .map((port, index) => {
+            const top = portOffset(outputs, index);
+            return `<span class="handle output ${escapeHtml(port.id)} port-${escapeHtml(port.kind)}"
+              style="top:${top}px" data-direction="output" data-kind="${escapeHtml(port.kind)}"
+              data-handle="${escapeHtml(port.id)}" title="${escapeHtml(port.label)}"></span>
+              <span class="port-label output-label" style="top:${top - 6}px">${escapeHtml(port.label)}</span>`;
+          })
+          .join("");
         return `
           <article class="flow-node ${node.id === state.selectedId ? "selected" : ""}"
             data-node-id="${node.id}"
             style="left:${node.position.x}px;top:${node.position.y}px;--node-color:${meta.color}">
-            <span class="handle input" data-handle="input" title="Entrada"></span>
-            ${conditionHandles}
+            ${inputHandles}
+            ${outputHandles}
             <div class="node-head">
               <span class="node-icon">${meta.icon}</span>
               <span class="node-copy">
@@ -248,7 +289,7 @@
       $$(".handle", element).forEach((handle) => {
         handle.addEventListener("pointerdown", (event) => {
           event.stopPropagation();
-          if (handle.dataset.handle !== "input") {
+          if (handle.dataset.direction === "output") {
             startConnectionDrag(event, element.dataset.nodeId, handle);
           }
         });
@@ -264,10 +305,20 @@
   }
 
   function sourceAnchor(source, sourceHandle = "default") {
-    const offsets = { true: 33, false: 65, default: 45 };
+    const ports = nodePorts(source, "output");
+    const index = Math.max(0, ports.findIndex((port) => port.id === sourceHandle));
     return {
       x: source.position.x + 218,
-      y: source.position.y + (offsets[sourceHandle] || offsets.default),
+      y: source.position.y + portOffset(ports, index),
+    };
+  }
+
+  function targetAnchor(target, targetHandle = "input") {
+    const ports = nodePorts(target, "input");
+    const index = Math.max(0, ports.findIndex((port) => port.id === targetHandle));
+    return {
+      x: target.position.x,
+      y: target.position.y + portOffset(ports, index),
     };
   }
 
@@ -276,9 +327,10 @@
     return `M ${sx} ${sy} C ${sx + curve} ${sy}, ${tx - curve} ${ty}, ${tx} ${ty}`;
   }
 
-  function edgePath(source, target, sourceHandle = "default") {
+  function edgePath(source, target, sourceHandle = "default", targetHandle = "input") {
     const start = sourceAnchor(source, sourceHandle);
-    return edgePathBetween(start.x, start.y, target.position.x, target.position.y + 45);
+    const end = targetAnchor(target, targetHandle);
+    return edgePathBetween(start.x, start.y, end.x, end.y);
   }
 
   function renderEdges() {
@@ -289,11 +341,14 @@
       .map((edge) => {
         const source = nodes[edge.source];
         const target = nodes[edge.target];
+        const resource = (edge.target_handle || "input") !== "input";
         const label =
           source.type === "condition" && edge.source_handle !== "default"
             ? `<text class="edge-label" x="${(source.position.x + target.position.x + 218) / 2}" y="${(source.position.y + target.position.y) / 2 + 35}">${edge.source_handle === "true" ? "SIM" : "NÃO"}</text>`
+            : resource
+            ? `<text class="edge-label resource-label" x="${(source.position.x + target.position.x + 218) / 2}" y="${(source.position.y + target.position.y) / 2 + 35}">${escapeHtml(edge.source_handle).toUpperCase()}</text>`
             : "";
-        return `<g data-edge-id="${edge.id}"><path class="edge-path" d="${edgePath(source, target, edge.source_handle)}"></path>${label}</g>`;
+        return `<g data-edge-id="${edge.id}"><path class="edge-path ${resource ? "resource-edge" : ""}" d="${edgePath(source, target, edge.source_handle, edge.target_handle || "input")}"></path>${label}</g>`;
       })
       .join("");
     renderConnectionPreview();
@@ -471,10 +526,54 @@
     );
   }
 
-  function createConnection(source, targetId) {
+  function compatibleTargetHandle(source, targetId, requestedHandle = "") {
+    const sourceNode = state.workflow.nodes.find((node) => node.id === source.nodeId);
+    const targetNode = state.workflow.nodes.find((node) => node.id === targetId);
+    if (!sourceNode || !targetNode) return null;
+    const sourcePort = nodePorts(sourceNode, "output").find(
+      (port) => port.id === source.handle
+    );
+    const targets = nodePorts(targetNode, "input");
+    if (requestedHandle) {
+      const requested = targets.find((port) => port.id === requestedHandle);
+      const occupied = state.workflow.edges.some(
+        (edge) =>
+          edge.target === targetId &&
+          (edge.target_handle || "input") === requested?.id
+      );
+      return requested?.kind === sourcePort?.kind &&
+        (requested.multiple || !occupied)
+        ? requested.id
+        : null;
+    }
+    return (
+      targets.find((port) => {
+        if (port.kind !== sourcePort?.kind) return false;
+        return (
+          port.multiple ||
+          !state.workflow.edges.some(
+            (edge) =>
+              edge.target === targetId &&
+              (edge.target_handle || "input") === port.id
+          )
+        );
+      })?.id || null
+    );
+  }
+
+  function createConnection(source, targetId, requestedHandle = "") {
     if (!source || source.nodeId === targetId) return false;
+    const targetHandle = compatibleTargetHandle(source, targetId, requestedHandle);
+    if (!targetHandle) {
+      toast("Essas alças não são compatíveis.", "error");
+      return false;
+    }
     const duplicate = state.workflow.edges.some(
-      (edge) => edge.source === source.nodeId && edge.target === targetId
+      (edge) =>
+        edge.source === source.nodeId &&
+        edge.target === targetId &&
+        edge.source_handle === source.handle &&
+        (edge.target_handle || "input") === targetHandle
     );
     if (duplicate) {
       toast("Esses nós já estão conectados.", "error");
@@ -486,6 +585,7 @@
       source: source.nodeId,
       target: targetId,
       source_handle: source.handle,
+      target_handle: targetHandle,
     });
     markDirty();
     return true;
@@ -499,7 +599,8 @@
         ? null
         : document.elementFromPoint(event.clientX, event.clientY);
     const targetNode = dropElement?.closest(".flow-node");
-    const droppedOnInput = Boolean(dropElement?.closest(".handle.input"));
+    const inputHandle = dropElement?.closest(".handle.input");
+    const droppedOnInput = Boolean(inputHandle);
     const droppedOnNodeBody = Boolean(targetNode && !dropElement?.closest(".handle.output"));
     const { captureTarget, pointerId } = drag;
     state.connectionDrag = null;
@@ -515,7 +616,11 @@
       targetNode.dataset.nodeId !== source?.nodeId &&
       (droppedOnInput || droppedOnNodeBody)
     ) {
-      createConnection(source, targetNode.dataset.nodeId);
+      createConnection(
+        source,
+        targetNode.dataset.nodeId,
+        inputHandle?.dataset.handle || ""
+      );
       state.connectFrom = null;
       state.suppressHandleClick = true;
       setTimeout(() => (state.suppressHandleClick = false), 0);
@@ -528,14 +633,14 @@
   function handleConnection(event, nodeId, handle) {
     event.stopPropagation();
     const kind = handle.dataset.handle;
-    if (kind !== "input") {
+    if (handle.dataset.direction === "output") {
       state.connectFrom = { nodeId, handle: kind };
-      toast("Agora clique na entrada do próximo nó.");
+      toast("Agora clique em uma alça compatível.");
       $(`[data-node-id="${nodeId}"]`, dom.nodes).classList.add("selected");
       return;
     }
     if (!state.connectFrom || state.connectFrom.nodeId === nodeId) return;
-    createConnection(state.connectFrom, nodeId);
+    createConnection(state.connectFrom, nodeId, kind);
     state.connectFrom = null;
     renderEdges();
   }
@@ -659,7 +764,9 @@
         : node.type === "vector_database"
         ? '<div class="provider-note"><strong id="vector-database-status">Consultando a base…</strong><br>Esta instância possui armazenamento próprio. Conteúdo repetido é deduplicado automaticamente.</div>'
         : node.type === "rag"
-        ? '<div class="provider-note">A busca publica o contexto e os resultados no fluxo para o próximo agente ou modelo.</div>'
+        ? '<div class="provider-note">Conecte a alça database de um Banco de Vetores e leve a alça tool até um Agente IA.</div>'
+        : node.type === "mcp_server"
+        ? '<div class="provider-note">A alça tool disponibiliza as ferramentas do servidor MCP ao agente conectado.</div>'
         : node.type === "webhook"
         ? '<div class="provider-note">A URL é exclusiva deste nó. O corpo JSON recebido vira os dados de entrada e a execução aparece no histórico do workflow.</div>'
         : "";

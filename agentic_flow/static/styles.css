@@ -343,6 +343,23 @@ button { color: inherit; }
 .handle-label { position: absolute; right: 9px; color: var(--muted); font-size: 8px; pointer-events: none; }
 .handle-label.true { top: 27px; }
 .handle-label.false { top: 59px; }
+.port-label {
+  position: absolute;
+  z-index: 2;
+  color: #777486;
+  font-size: 7px;
+  line-height: 1;
+  letter-spacing: .03em;
+  pointer-events: none;
+}
+.port-label.input-label { left: 9px; }
+.port-label.output-label { right: 9px; }
+.handle.port-tool { border-color: #f59e0b; }
+.handle.port-database { border-color: #22c55e; }
+.edge-path.resource-edge {
+  stroke: #9b87ff;
+  stroke-dasharray: 6 5;
+}
 
 .canvas-toolbar {
   position: absolute;

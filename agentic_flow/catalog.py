@@ -86,6 +86,10 @@ NODE_CATALOG: list[dict[str, Any]] = [
         "category": "IA",
         "color": "#ec4899",
         "icon": "AG",
+        "inputs": [
+            {"id": "input", "label": "entrada", "kind": "flow", "multiple": True},
+            {"id": "tools", "label": "tools", "kind": "tool", "multiple": True},
+        ],
         "defaults": {
             "role": "Especialista",
             "provider_id": "mock",
@@ -109,12 +113,6 @@ NODE_CATALOG: list[dict[str, Any]] = [
             {"key": "system_prompt", "label": "Instrução do sistema", "type": "textarea"},
             {"key": "input_field", "label": "Campo de entrada", "type": "text"},
             {"key": "output_field", "label": "Campo de saída", "type": "text"},
-            {
-                "key": "vector_db_node_id",
-                "label": "Base de conhecimento (opcional)",
-                "type": "node_select",
-                "node_types": ["vector_database"],
-            },
             {"key": "rag_top_k", "label": "Trechos recuperados", "type": "number"},
             {
                 "key": "rag_min_score",
@@ -131,6 +129,10 @@ NODE_CATALOG: list[dict[str, Any]] = [
         "category": "Conhecimento",
         "color": "#22c55e",
         "icon": "DB",
+        "outputs": [
+            {"id": "default", "label": "saída", "kind": "flow"},
+            {"id": "database", "label": "database", "kind": "database"},
+        ],
         "defaults": {
             "input_field": "document_text",
             "output_field": "vector_database",
@@ -160,6 +162,14 @@ NODE_CATALOG: list[dict[str, Any]] = [
         "category": "Conhecimento",
         "color": "#10b981",
         "icon": "RAG",
+        "inputs": [
+            {"id": "input", "label": "entrada", "kind": "flow", "multiple": True},
+            {"id": "database", "label": "database", "kind": "database"},
+        ],
+        "outputs": [
+            {"id": "default", "label": "saída", "kind": "flow"},
+            {"id": "tool", "label": "tool", "kind": "tool"},
+        ],
         "defaults": {
             "vector_db_node_id": "",
             "query_field": "message",
@@ -170,18 +180,40 @@ NODE_CATALOG: list[dict[str, Any]] = [
             "separator": "\n\n---\n\n",
         },
         "fields": [
-            {
-                "key": "vector_db_node_id",
-                "label": "Banco de Vetores",
-                "type": "node_select",
-                "node_types": ["vector_database"],
-            },
             {"key": "query_field", "label": "Campo da consulta", "type": "text"},
             {"key": "context_field", "label": "Campo do contexto", "type": "text"},
             {"key": "matches_field", "label": "Campo dos resultados", "type": "text"},
             {"key": "top_k", "label": "Máximo de trechos", "type": "number"},
             {"key": "min_score", "label": "Similaridade mínima", "type": "number"},
             {"key": "separator", "label": "Separador de trechos", "type": "textarea"},
+        ],
+    },
+    {
+        "type": "mcp_server",
+        "name": "MCP Server",
+        "description": "Conecta ferramentas remotas de um servidor MCP ao Agente IA.",
+        "category": "Ferramentas",
+        "color": "#f97316",
+        "icon": "MCP",
+        "inputs": [],
+        "outputs": [
+            {"id": "tool", "label": "tool", "kind": "tool"},
+        ],
+        "defaults": {
+            "url": "http://localhost:8000/mcp",
+            "tool_name": "",
+            "arguments": "",
+            "timeout": 30,
+        },
+        "fields": [
+            {"key": "url", "label": "URL Streamable HTTP", "type": "text"},
+            {"key": "tool_name", "label": "Ferramenta preferida (opcional)", "type": "text"},
+            {
+                "key": "arguments",
+                "label": "Argumentos JSON (opcional)",
+                "type": "textarea",
+            },
+            {"key": "timeout", "label": "Timeout (s)", "type": "number"},
         ],
     },
     {

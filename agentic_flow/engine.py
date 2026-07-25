@@ -11,6 +11,7 @@ import httpx
 from langgraph.graph import END, START, StateGraph
 
 from .catalog import CATALOG_BY_TYPE
+from .mcp import MCPRuntime
 from .media import extract_video_frames, process_image, read_document
 from .models import Node, RunEvent, RunRequest, RunResult, Workflow, utc_now
 from .vectors import chunk_text, documents_from_value, embed_text
@@ -57,6 +58,7 @@ def validate_workflow(workflow: Workflow) -> None:
     if len(ids) != len(set(ids)):
         raise WorkflowValidationError("Existem nós com IDs duplicados.")
     known = set(ids)
+    nodes_by_id = {node.id: node for node in workflow.nodes}
     node_types = {node.id: node.type for node in workflow.nodes}
     for node in workflow.nodes:
         if node.type not in CATALOG_BY_TYPE:
@@ -71,6 +73,52 @@ def validate_workflow(workflow: Workflow) -> None:
             raise WorkflowValidationError(f"Conexão {edge.id} referencia um nó inexistente.")
         if edge.source == edge.target:
             raise WorkflowValidationError("Um nó não pode conectar a si mesmo.")
+        source_meta = CATALOG_BY_TYPE[node_types[edge.source]]
+        target_meta = CATALOG_BY_TYPE[node_types[edge.target]]
+        source_ports = source_meta.get("outputs") or [
+            {
+                "id": handle,
+                "kind": "flow",
+            }
+            for handle in source_meta.get("handles", ["default"])
+        ]
+        target_ports = target_meta.get("inputs")
+        if target_ports is None:
+            target_ports = [{"id": "input", "kind": "flow"}]
+        source_port = next(
+            (port for port in source_ports if port["id"] == edge.source_handle),
+            None,
+        )
+        target_port = next(
+            (port for port in target_ports if port["id"] == edge.target_handle),
+            None,
+        )
+        if not source_port or not target_port:
+            raise WorkflowValidationError(
+                f"A conexão entre “{nodes_by_id[edge.source].name}” e "
+                f"“{nodes_by_id[edge.target].name}” usa uma alça inexistente."
+            )
+        if source_port.get("kind", "flow") != target_port.get("kind", "flow"):
+            raise WorkflowValidationError(
+                f"As alças de “{nodes_by_id[edge.source].name}” e "
+                f"“{nodes_by_id[edge.target].name}” são incompatíveis."
+            )
+    incoming_ports: dict[tuple[str, str], int] = defaultdict(int)
+    for edge in workflow.edges:
+        key = (edge.target, edge.target_handle)
+        incoming_ports[key] += 1
+        target_meta = CATALOG_BY_TYPE[node_types[edge.target]]
+        target_ports = target_meta.get("inputs")
+        if target_ports is None:
+            continue
+        target_port = next(
+            port for port in target_ports if port["id"] == edge.target_handle
+        )
+        if incoming_ports[key] > 1 and not target_port.get("multiple", False):
+            raise WorkflowValidationError(
+                f"A alça “{target_port.get('label', edge.target_handle)}” de "
+                f"“{nodes_by_id[edge.target].name}” aceita apenas uma conexão."
+            )
     outgoing_handles: dict[str, set[str]] = defaultdict(set)
     for edge in workflow.edges:
         outgoing_handles[edge.source].add(edge.source_handle)
@@ -85,6 +133,16 @@ def validate_workflow(workflow: Workflow) -> None:
     adjacency: dict[str, list[str]] = defaultdict(list)
     indegree = {node_id: 0 for node_id in ids}
     for edge in workflow.edges:
+        source_meta = CATALOG_BY_TYPE[node_types[edge.source]]
+        source_ports = source_meta.get("outputs") or [
+            {"id": handle, "kind": "flow"}
+            for handle in source_meta.get("handles", ["default"])
+        ]
+        source_port = next(
+            port for port in source_ports if port["id"] == edge.source_handle
+        )
+        if source_port.get("kind", "flow") != "flow":
+            continue
         adjacency[edge.source].append(edge.target)
         indegree[edge.target] += 1
     queue = deque(node_id for node_id, degree in indegree.items() if degree == 0)
@@ -101,9 +159,12 @@ def validate_workflow(workflow: Workflow) -> None:
 
 
 class WorkflowEngine:
-    def __init__(self, provider_runtime=None, vector_store=None):
+    def __init__(
+        self, provider_runtime=None, vector_store=None, mcp_runtime=None
+    ):
         self.provider_runtime = provider_runtime
         self.vector_store = vector_store
+        self.mcp_runtime = mcp_runtime or MCPRuntime()
 
     def _search_vector_database(
         self,
@@ -267,6 +328,7 @@ class WorkflowEngine:
                     )
                 vector_node_id = (
                     config.get("vector_db_node_id")
+                    or config.get("_linked_vector_db_node_id")
                     or data.get("_last_vector_database_node_id")
                 )
                 matches = self._search_vector_database(
@@ -288,6 +350,14 @@ class WorkflowEngine:
                 }
                 data[context_field] = context
                 data[matches_field] = matches
+            elif node.type == "mcp_server":
+                tools = self.mcp_runtime.list_tools(config)
+                result = {
+                    "server": node.name,
+                    "url": config.get("url"),
+                    "tools": tools,
+                }
+                data[config.get("output_field", "mcp_tools")] = result
             elif node.type == "condition":
                 actual = lookup(data, config.get("field", ""))
                 expected = config.get("value")
@@ -331,22 +401,63 @@ class WorkflowEngine:
                     )
                 )
                 vector_node_id = config.get("vector_db_node_id")
+                collected_matches: list[dict[str, Any]] = []
                 if vector_node_id:
-                    matches = self._search_vector_database(
+                    collected_matches.extend(self._search_vector_database(
                         state=state,
                         node_id=str(vector_node_id),
                         query=prompt,
                         top_k=int(config.get("rag_top_k", 5)),
                         min_score=float(config.get("rag_min_score", 0)),
+                    ))
+                tool_results: list[dict[str, Any]] = []
+                for tool_node in config.get("_attached_tools", []):
+                    tool_config = dict(tool_node.get("config") or {})
+                    if tool_node.get("type") == "rag":
+                        linked_database = (
+                            tool_config.get("_linked_vector_db_node_id")
+                            or tool_config.get("vector_db_node_id")
+                        )
+                        collected_matches.extend(
+                            self._search_vector_database(
+                                state=state,
+                                node_id=str(linked_database or ""),
+                                query=prompt,
+                                top_k=int(tool_config.get("top_k", 5)),
+                                min_score=float(tool_config.get("min_score", 0)),
+                            )
+                        )
+                    elif tool_node.get("type") == "mcp_server":
+                        tool_config["_node_name"] = tool_node.get("name")
+                        called = self.mcp_runtime.call_for_agent(
+                            tool_config, prompt, data
+                        )
+                        if called:
+                            tool_results.append(called)
+                if collected_matches:
+                    unique_matches = {
+                        match["id"]: match for match in collected_matches
+                    }
+                    matches = sorted(
+                        unique_matches.values(),
+                        key=lambda match: match["score"],
+                        reverse=True,
                     )
                     data["rag_matches"] = matches
                     data["rag_context"] = "\n\n---\n\n".join(
                         match["content"] for match in matches
                     )
+                if tool_results:
+                    data["tool_results"] = tool_results
                 if data.get("rag_context"):
                     prompt = (
                         f"{prompt}\n\nContexto recuperado da base de conhecimento:\n"
                         f"{data['rag_context']}"
+                    )
+                if tool_results:
+                    prompt = (
+                        f"{prompt}\n\nResultados das ferramentas MCP:\n"
+                        f"{json.dumps(tool_results, ensure_ascii=False)}"
                     )
                 instructions = render_template(
                     config.get("system_prompt", "Atue como {{role}}."),
@@ -420,16 +531,80 @@ class WorkflowEngine:
         if entry_node_id and entry_node_id not in {node.id for node in workflow.nodes}:
             raise WorkflowValidationError("O nó de entrada solicitado não existe.")
         graph = StateGraph(FlowState)
-        nodes = {node.id: node for node in workflow.nodes}
-        inbound = {node.id: 0 for node in workflow.nodes}
-        outgoing: dict[str, list[Any]] = defaultdict(list)
+        nodes = {node.id: node.model_copy(deep=True) for node in workflow.nodes}
+        node_types = {node.id: node.type for node in workflow.nodes}
+        flow_edges = []
+        resource_sources: set[str] = set()
+        flow_incident: set[str] = set()
         for edge in workflow.edges:
+            meta = CATALOG_BY_TYPE[node_types[edge.source]]
+            ports = meta.get("outputs") or [
+                {"id": handle, "kind": "flow"}
+                for handle in meta.get("handles", ["default"])
+            ]
+            port = next(item for item in ports if item["id"] == edge.source_handle)
+            if port.get("kind", "flow") == "flow":
+                flow_edges.append(edge)
+                flow_incident.update((edge.source, edge.target))
+            else:
+                resource_sources.add(edge.source)
+
+        # Resolve resource wiring statically. Resource edges configure capabilities;
+        # they do not impose execution order on the LangGraph.
+        for agent in (node for node in nodes.values() if node.type == "agent"):
+            attached = []
+            for edge in workflow.edges:
+                if edge.target == agent.id and edge.target_handle == "tools":
+                    tool = nodes[edge.source].model_copy(deep=True)
+                    if tool.type == "rag":
+                        database_edge = next(
+                            (
+                                candidate
+                                for candidate in workflow.edges
+                                if candidate.target == tool.id
+                                and candidate.target_handle == "database"
+                            ),
+                            None,
+                        )
+                        if database_edge:
+                            tool.config["_linked_vector_db_node_id"] = (
+                                database_edge.source
+                            )
+                    attached.append(tool.model_dump())
+            agent.config["_attached_tools"] = attached
+
+        for rag in (node for node in nodes.values() if node.type == "rag"):
+            database_edge = next(
+                (
+                    edge
+                    for edge in workflow.edges
+                    if edge.target == rag.id and edge.target_handle == "database"
+                ),
+                None,
+            )
+            if database_edge:
+                rag.config["_linked_vector_db_node_id"] = database_edge.source
+
+        passive_nodes = resource_sources - flow_incident
+        active_nodes = {
+            node_id: node for node_id, node in nodes.items()
+            if node_id not in passive_nodes
+        }
+        inbound = {node_id: 0 for node_id in active_nodes}
+        outgoing: dict[str, list[Any]] = defaultdict(list)
+        for edge in flow_edges:
+            if edge.source not in active_nodes or edge.target not in active_nodes:
+                continue
             inbound[edge.target] += 1
             outgoing[edge.source].append(edge)
 
-        for node in workflow.nodes:
+        for node in active_nodes.values():
             graph.add_node(node.id, lambda state, current=node: self._execute_node(current, state))
         if entry_node_id:
+            if entry_node_id not in active_nodes:
+                raise WorkflowValidationError(
+                    "O nó de entrada solicitado é um recurso passivo."
+                )
             graph.add_edge(START, entry_node_id)
         else:
             for node_id, count in inbound.items():
@@ -437,7 +612,7 @@ class WorkflowEngine:
                     graph.add_edge(START, node_id)
 
         for source, edges in outgoing.items():
-            source_node = nodes[source]
+            source_node = active_nodes[source]
             if source_node.type == "condition":
                 routes = {edge.source_handle: edge.target for edge in edges}
                 if "true" in routes or "false" in routes:
@@ -451,7 +626,7 @@ class WorkflowEngine:
                     continue
             for edge in edges:
                 graph.add_edge(edge.source, edge.target)
-        for node in workflow.nodes:
+        for node in active_nodes.values():
             if node.id not in outgoing:
                 graph.add_edge(node.id, END)
         return graph.compile()
