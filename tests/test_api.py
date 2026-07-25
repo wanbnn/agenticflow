@@ -322,6 +322,9 @@ def test_admin_manages_users_and_multiple_workspaces(tmp_path):
     assert 'data-access-tab="teams"' in access_page.text
     assert 'data-access-tab="workspaces"' in access_page.text
     assert "/static/workspace.js" in access_page.text
+    assert "/static/workspace.js?v=" in access_page.text
+    assert "/static/access.js?v=" in access_page.text
+    assert "/static/styles.css?v=" in access_page.text
     assert 'id="workspace-select"' not in access_page.text
 
     client.post("/api/auth/logout")

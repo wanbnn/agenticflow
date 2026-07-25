@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from hashlib import sha256
+from pathlib import Path
+
 from pyreact import h
 from pyreact.server import render_to_static_markup
 
@@ -322,8 +325,25 @@ def App(props):
     )
 
 
+def _versioned_asset(source: str) -> str:
+    if not source.startswith("/static/"):
+        return source
+    path = Path(__file__).resolve().parent / "static" / source.removeprefix(
+        "/static/"
+    )
+    try:
+        digest = sha256(path.read_bytes()).hexdigest()[:10]
+    except OSError:
+        return source
+    return f"{source}?v={digest}"
+
+
 def _document(body: str, title: str, scripts: list[str], body_class: str = "") -> str:
-    script_tags = "\n".join(f'  <script src="{src}" defer></script>' for src in scripts)
+    script_tags = "\n".join(
+        f'  <script src="{_versioned_asset(src)}" defer></script>'
+        for src in scripts
+    )
+    stylesheet = _versioned_asset("/static/styles.css")
     return f"""<!doctype html>
 <html lang="pt-BR">
 <head>
@@ -334,7 +354,7 @@ def _document(body: str, title: str, scripts: list[str], body_class: str = "") -
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/static/styles.css">
+  <link rel="stylesheet" href="{stylesheet}">
 </head>
 <body class="{body_class}">
   {body}
