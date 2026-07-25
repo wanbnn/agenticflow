@@ -1,11 +1,4 @@
 (() => {
-  document.querySelector("#workspace-select")?.addEventListener("change", async (event) => {
-    const response = await fetch(`/api/auth/workspace/${event.target.value}`, {
-      method: "POST",
-    });
-    if (response.ok) window.location.reload();
-  });
-
   const $ = (selector) => document.querySelector(selector);
   let providers = [];
   let types = [];

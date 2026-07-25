@@ -309,10 +309,18 @@
   modal.addEventListener("click", (event) => {
     if (event.target === modal) closeModal();
   });
-  $("#workspace-select").addEventListener("change", async (event) => {
-    await api(`/api/auth/workspace/${event.target.value}`, { method: "POST" });
-    window.location.reload();
+  document.querySelectorAll("[data-access-tab]").forEach((tab) => {
+    tab.addEventListener("click", () => {
+      document.querySelectorAll("[data-access-tab]").forEach((item) =>
+        item.classList.toggle("active", item === tab)
+      );
+      document.querySelectorAll("[data-access-panel]").forEach((panel) =>
+        panel.classList.toggle(
+          "active",
+          panel.dataset.accessPanel === tab.dataset.accessTab
+        )
+      );
+    });
   });
-
   load().catch((error) => toast(error.message, "error"));
 })();

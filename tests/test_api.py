@@ -315,7 +315,14 @@ def test_admin_manages_users_and_multiple_workspaces(tmp_path):
         f"/api/auth/workspace/{second_workspace_id}"
     ).status_code == 200
     assert client.get("/api/auth/me").json()["workspace"]["id"] == second_workspace_id
-    assert "Usuários, times e políticas" in client.get("/settings/access").text
+    access_page = client.get("/settings/access")
+    assert "Usuários, times e políticas" in access_page.text
+    assert 'class="workspace-popover"' in access_page.text
+    assert 'data-access-tab="people"' in access_page.text
+    assert 'data-access-tab="teams"' in access_page.text
+    assert 'data-access-tab="workspaces"' in access_page.text
+    assert "/static/workspace.js" in access_page.text
+    assert 'id="workspace-select"' not in access_page.text
 
     client.post("/api/auth/logout")
     denied = client.post(

@@ -22,28 +22,56 @@ def WorkspaceSwitcher(props):
     workspace = props["workspace"]
     workspaces = props.get("workspaces", [workspace])
     return h(
-        "div",
-        {"className": "workspace-switcher"},
-        h("span", {"className": "workspace-avatar"}, workspace["name"][:1].upper()),
+        "details",
+        {"className": "workspace-menu", "id": "workspace-menu"},
+        h(
+            "summary",
+            {"className": "workspace-trigger", "title": "Trocar workspace"},
+            h("span", {"className": "workspace-avatar"}, workspace["name"][:1].upper()),
+            h(
+                "span",
+                {"className": "workspace-trigger-copy"},
+                h("small", None, "WORKSPACE ATIVO"),
+                h("strong", None, workspace["name"]),
+            ),
+            h("span", {"className": "workspace-chevron"}, "⌄"),
+        ),
         h(
             "div",
-            None,
-            h("small", None, "WORKSPACE"),
+            {"className": "workspace-popover"},
             h(
-                "select",
-                {
-                    "className": "workspace-select",
-                    "id": "workspace-select",
-                    "aria-label": "Workspace ativo",
-                },
+                "div",
+                {"className": "workspace-popover-head"},
+                h("strong", None, "Seus workspaces"),
+                h("small", None, f"{len(workspaces)} disponível(is)"),
+            ),
+            h(
+                "div",
+                {"className": "workspace-options"},
                 *[
                     h(
-                        "option",
+                        "button",
                         {
-                            "value": item["id"],
-                            "selected": item["id"] == workspace["id"],
+                            "type": "button",
+                            "className": "workspace-option active"
+                            if item["id"] == workspace["id"]
+                            else "workspace-option",
+                            "data-workspace-id": item["id"],
                         },
-                        item["name"],
+                        h("span", {"className": "workspace-option-avatar"}, item["name"][:1].upper()),
+                        h(
+                            "span",
+                            None,
+                            h("strong", None, item["name"]),
+                            h(
+                                "small",
+                                None,
+                                "Workspace atual"
+                                if item["id"] == workspace["id"]
+                                else "Abrir workspace",
+                            ),
+                        ),
+                        h("span", {"className": "workspace-option-check"}, "✓" if item["id"] == workspace["id"] else "→"),
                     )
                     for item in workspaces
                 ],
@@ -627,7 +655,11 @@ def render_dashboard(
             },
         )
     )
-    return _document(body, "Workflows · Agentic Flow", ["/static/dashboard.js"])
+    return _document(
+        body,
+        "Workflows · Agentic Flow",
+        ["/static/workspace.js", "/static/dashboard.js"],
+    )
 
 
 def ProvidersPage(props):
@@ -844,7 +876,7 @@ def render_providers_page(
     return _document(
         body,
         "Provedores de IA · Agentic Flow",
-        ["/static/providers.js"],
+        ["/static/workspace.js", "/static/providers.js"],
     )
 
 
@@ -890,29 +922,29 @@ def AccessPage(props):
                     ),
                 ),
                 h(
+                    "a",
+                    {"className": "button secondary", "href": "/settings/providers"},
+                    "Provedores de IA →",
+                ),
+            ),
+            h(
+                "section",
+                {"className": "governance-banner"},
+                h("span", {"className": "governance-icon"}, "◆"),
+                h(
                     "div",
-                    {"className": "access-heading-actions"},
-                    *(
-                        [
-                            h(
-                                "button",
-                                {"className": "button secondary", "id": "new-workspace-button"},
-                                "+ Workspace",
-                            ),
-                            h(
-                                "button",
-                                {"className": "button primary", "id": "new-user-button"},
-                                "+ Usuário",
-                            ),
-                        ]
-                        if is_admin
-                        else []
-                    ),
+                    None,
+                    h("strong", None, f"Governança de {workspace['name']}"),
                     h(
-                        "button",
-                        {"className": "button primary", "id": "new-team-button"},
-                        "+ Time",
+                        "p",
+                        None,
+                        "Papéis definem o nível global. Times refinam permissões e o catálogo de nós dentro deste workspace.",
                     ),
+                ),
+                h(
+                    "span",
+                    {"className": f"role-badge {user.get('role', 'user')}"},
+                    str(user.get("role", "user")).upper(),
                 ),
             ),
             h(
@@ -922,41 +954,126 @@ def AccessPage(props):
                 h("article", None, h("strong", None, "—"), h("span", None, "Times")),
                 h("article", None, h("strong", None, "—"), h("span", None, "Workspaces")),
             ),
+            h(
+                "nav",
+                {"className": "access-tabs", "aria-label": "Seções de governança"},
+                h(
+                    "button",
+                    {
+                        "type": "button",
+                        "className": "access-tab active",
+                        "data-access-tab": "people",
+                    },
+                    h("span", None, "◎"),
+                    "Pessoas",
+                ),
+                h(
+                    "button",
+                    {
+                        "type": "button",
+                        "className": "access-tab",
+                        "data-access-tab": "teams",
+                    },
+                    h("span", None, "♙"),
+                    "Times e políticas",
+                ),
+                *(
+                    [
+                        h(
+                            "button",
+                            {
+                                "type": "button",
+                                "className": "access-tab",
+                                "data-access-tab": "workspaces",
+                            },
+                            h("span", None, "◇"),
+                            "Workspaces",
+                        )
+                    ]
+                    if is_admin
+                    else []
+                ),
+            ),
+            h(
+                "section",
+                {
+                    "className": "access-panel active",
+                    "data-access-panel": "people",
+                },
+                h(
+                    "div",
+                    {"className": "access-section-head"},
+                    h(
+                        "div",
+                        None,
+                        h("h2", None, "Pessoas neste workspace"),
+                        h("p", None, "Papéis globais e vínculos aprovados pelo administrador."),
+                    ),
+                    *(
+                        [
+                            h(
+                                "button",
+                                {"className": "button primary", "id": "new-user-button"},
+                                h("span", None, "+"),
+                                "Novo usuário",
+                            )
+                        ]
+                        if is_admin
+                        else []
+                    ),
+                ),
+                h("div", {"className": "access-table", "id": "access-users"}),
+            ),
+            h(
+                "section",
+                {"className": "access-panel", "data-access-panel": "teams"},
+                h(
+                    "div",
+                    {"className": "access-section-head"},
+                    h(
+                        "div",
+                        None,
+                        h("h2", None, "Times e políticas"),
+                        h("p", None, "Permissões são combinadas entre os times do usuário."),
+                    ),
+                    h(
+                        "button",
+                        {"className": "button primary", "id": "new-team-button"},
+                        h("span", None, "+"),
+                        "Novo time",
+                    ),
+                ),
+                h("div", {"className": "team-grid", "id": "team-grid"}),
+            ),
             *(
                 [
                     h(
                         "section",
-                        {"className": "access-section"},
+                        {
+                            "className": "access-panel",
+                            "data-access-panel": "workspaces",
+                        },
                         h(
                             "div",
                             {"className": "access-section-head"},
-                            h("div", None, h("h2", None, "Workspaces"), h("p", None, "Libere usuários em um ou mais ambientes.")),
+                            h(
+                                "div",
+                                None,
+                                h("h2", None, "Workspaces da organização"),
+                                h("p", None, "Crie ambientes e libere pessoas para cada operação."),
+                            ),
+                            h(
+                                "button",
+                                {"className": "button primary", "id": "new-workspace-button"},
+                                h("span", None, "+"),
+                                "Novo workspace",
+                            ),
                         ),
                         h("div", {"className": "access-grid", "id": "workspace-admin-grid"}),
                     )
                 ]
                 if is_admin
                 else []
-            ),
-            h(
-                "section",
-                {"className": "access-section"},
-                h(
-                    "div",
-                    {"className": "access-section-head"},
-                    h("div", None, h("h2", None, "Usuários do workspace"), h("p", None, "Papéis globais e vínculos aprovados.")),
-                ),
-                h("div", {"className": "access-table", "id": "access-users"}),
-            ),
-            h(
-                "section",
-                {"className": "access-section"},
-                h(
-                    "div",
-                    {"className": "access-section-head"},
-                    h("div", None, h("h2", None, "Times e políticas"), h("p", None, "Permissões são combinadas entre os times do usuário.")),
-                ),
-                h("div", {"className": "team-grid", "id": "team-grid"}),
             ),
         ),
         h(
@@ -995,5 +1112,5 @@ def render_access_page(
     return _document(
         body,
         "Acesso e políticas · Agentic Flow",
-        ["/static/access.js"],
+        ["/static/workspace.js", "/static/access.js"],
     )
