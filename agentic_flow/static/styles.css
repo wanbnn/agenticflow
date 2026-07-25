@@ -257,7 +257,7 @@ button { color: inherit; }
 .tip-icon { width: 20px; height: 20px; flex: 0 0 auto; border: 1px solid var(--line); border-radius: 50%; display: grid; place-items: center; }
 
 .workspace { position: relative; min-width: 0; overflow: hidden; background: #0d0d12; }
-.canvas { position: absolute; inset: 0; overflow: hidden; cursor: grab; user-select: none; }
+.canvas { position: absolute; inset: 0; overflow: hidden; cursor: grab; user-select: none; touch-action: none; }
 .canvas.panning, .canvas.pan-tool-active { cursor: grabbing; }
 .canvas-grid {
   position: absolute;
@@ -302,6 +302,10 @@ button { color: inherit; }
 .flow-node.selected {
   border-color: var(--node-color);
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--node-color) 22%, transparent), 0 12px 30px rgba(0,0,0,.38);
+}
+.flow-node.connection-target {
+  border-color: var(--purple-2);
+  box-shadow: 0 0 0 3px rgba(118,87,255,.2), 0 12px 30px rgba(0,0,0,.38);
 }
 .flow-node.running { animation: nodePulse 1s infinite; }
 .flow-node.success { border-color: var(--green); }

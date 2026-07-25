@@ -203,7 +203,7 @@
 
   function bindNodeEvents() {
     $$(".flow-node", dom.nodes).forEach((element) => {
-      element.addEventListener("mousedown", startNodeDrag);
+      element.addEventListener("pointerdown", startNodeDrag);
       element.addEventListener("click", (event) => {
         if (event.target.closest(".handle")) return;
         selectNode(element.dataset.nodeId);
@@ -213,7 +213,7 @@
         selectNode(element.dataset.nodeId);
       });
       $$(".handle", element).forEach((handle) => {
-        handle.addEventListener("mousedown", (event) => {
+        handle.addEventListener("pointerdown", (event) => {
           event.stopPropagation();
           if (handle.dataset.handle !== "input") {
             startConnectionDrag(event, element.dataset.nodeId, handle);
@@ -320,17 +320,20 @@
     selectNode(id);
     state.dragging = {
       node,
+      pointerId: event.pointerId,
+      captureTarget: event.currentTarget,
       startX: event.clientX,
       startY: event.clientY,
       originX: node.position.x,
       originY: node.position.y,
     };
+    event.currentTarget.setPointerCapture?.(event.pointerId);
     event.currentTarget.style.cursor = "grabbing";
     event.preventDefault();
   }
 
-  window.addEventListener("mousemove", (event) => {
-    if (state.dragging) {
+  window.addEventListener("pointermove", (event) => {
+    if (state.dragging && state.dragging.pointerId === event.pointerId) {
       const drag = state.dragging;
       drag.node.position.x = drag.originX + (event.clientX - drag.startX) / state.zoom;
       drag.node.position.y = drag.originY + (event.clientY - drag.startY) / state.zoom;
@@ -340,7 +343,7 @@
       renderEdges();
       renderMinimap();
     }
-    if (state.panning) {
+    if (state.panning && state.panning.pointerId === event.pointerId) {
       const pan = state.panning;
       const dx = event.clientX - pan.startX;
       const dy = event.clientY - pan.startY;
@@ -349,7 +352,7 @@
       state.pan.y = pan.originY + dy;
       applyTransform();
     }
-    if (state.connectionDrag) {
+    if (state.connectionDrag && state.connectionDrag.pointerId === event.pointerId) {
       const connection = state.connectionDrag;
       connection.clientX = event.clientX;
       connection.clientY = event.clientY;
@@ -357,36 +360,61 @@
         event.clientX - connection.startX,
         event.clientY - connection.startY
       ) > 3;
+      const hoveredNode = document
+        .elementFromPoint(event.clientX, event.clientY)
+        ?.closest(".flow-node");
+      $$(".flow-node.connection-target", dom.nodes).forEach((node) =>
+        node.classList.remove("connection-target")
+      );
+      if (hoveredNode?.dataset.nodeId !== state.connectFrom?.nodeId) {
+        hoveredNode?.classList.add("connection-target");
+      }
       renderEdges();
     }
   });
 
-  window.addEventListener("mouseup", (event) => {
-    if (state.dragging) {
+  function finishPointerInteraction(event) {
+    if (state.dragging && state.dragging.pointerId === event.pointerId) {
+      const { captureTarget, pointerId } = state.dragging;
+      if (captureTarget?.hasPointerCapture?.(pointerId)) {
+        captureTarget.releasePointerCapture(pointerId);
+      }
       state.dragging = null;
       markDirty();
     }
-    if (state.panning) {
+    if (state.panning && state.panning.pointerId === event.pointerId) {
+      const { pointerId } = state.panning;
       if (state.panning.moved) {
         state.suppressCanvasClick = true;
         setTimeout(() => (state.suppressCanvasClick = false), 0);
       }
       state.panning = null;
       dom.canvas.classList.remove("panning");
+      if (dom.canvas.hasPointerCapture?.(pointerId)) {
+        dom.canvas.releasePointerCapture(pointerId);
+      }
     }
-    if (state.connectionDrag) finishConnectionDrag(event);
-  });
+    if (state.connectionDrag && state.connectionDrag.pointerId === event.pointerId) {
+      finishConnectionDrag(event);
+    }
+  }
+
+  window.addEventListener("pointerup", finishPointerInteraction);
+  window.addEventListener("pointercancel", finishPointerInteraction);
 
   function startConnectionDrag(event, nodeId, handle) {
     if (event.button !== 0) return;
     state.connectFrom = { nodeId, handle: handle.dataset.handle };
     state.connectionDrag = {
+      pointerId: event.pointerId,
+      captureTarget: handle,
       startX: event.clientX,
       startY: event.clientY,
       clientX: event.clientX,
       clientY: event.clientY,
       moved: false,
     };
+    handle.setPointerCapture?.(event.pointerId);
     handle.classList.add("connecting");
     renderEdges();
     event.preventDefault();
@@ -432,11 +460,27 @@
   function finishConnectionDrag(event) {
     const drag = state.connectionDrag;
     const source = state.connectFrom;
-    const targetHandle = document.elementFromPoint(event.clientX, event.clientY)?.closest(".handle.input");
-    const targetNode = targetHandle?.closest(".flow-node");
+    const dropElement =
+      event.type === "pointercancel"
+        ? null
+        : document.elementFromPoint(event.clientX, event.clientY);
+    const targetNode = dropElement?.closest(".flow-node");
+    const droppedOnInput = Boolean(dropElement?.closest(".handle.input"));
+    const droppedOnNodeBody = Boolean(targetNode && !dropElement?.closest(".handle.output"));
+    const { captureTarget, pointerId } = drag;
     state.connectionDrag = null;
+    if (captureTarget?.hasPointerCapture?.(pointerId)) {
+      captureTarget.releasePointerCapture(pointerId);
+    }
     $$(".handle.connecting", dom.nodes).forEach((handle) => handle.classList.remove("connecting"));
-    if (targetNode && targetNode.dataset.nodeId !== source?.nodeId) {
+    $$(".flow-node.connection-target", dom.nodes).forEach((node) =>
+      node.classList.remove("connection-target")
+    );
+    if (
+      targetNode &&
+      targetNode.dataset.nodeId !== source?.nodeId &&
+      (droppedOnInput || droppedOnNodeBody)
+    ) {
       createConnection(source, targetNode.dataset.nodeId);
       state.connectFrom = null;
       state.suppressHandleClick = true;
@@ -810,26 +854,29 @@
         y: (event.clientY - rect.top - state.pan.y) / state.zoom - 45,
       });
     });
-    dom.canvas.addEventListener("mousedown", (event) => {
+    dom.canvas.addEventListener("pointerdown", (event) => {
       const panToolActive = $("#pan-tool").classList.contains("active");
       const isBackground =
         event.target === dom.canvas ||
         event.target.classList.contains("canvas-grid") ||
         event.target === dom.stage ||
         event.target === dom.nodes ||
-        event.target === dom.edges;
+        event.target === dom.edges ||
+        Boolean(event.target.closest(".empty-canvas"));
       if (
         (!isBackground && !panToolActive) ||
         (event.button !== 0 && event.button !== 1) ||
         event.target.closest(".handle,button")
       ) return;
       state.panning = {
+        pointerId: event.pointerId,
         startX: event.clientX,
         startY: event.clientY,
         originX: state.pan.x,
         originY: state.pan.y,
         moved: false,
       };
+      dom.canvas.setPointerCapture?.(event.pointerId);
       dom.canvas.classList.add("panning");
       event.preventDefault();
     });
