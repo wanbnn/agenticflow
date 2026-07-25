@@ -257,7 +257,8 @@ button { color: inherit; }
 .tip-icon { width: 20px; height: 20px; flex: 0 0 auto; border: 1px solid var(--line); border-radius: 50%; display: grid; place-items: center; }
 
 .workspace { position: relative; min-width: 0; overflow: hidden; background: #0d0d12; }
-.canvas { position: absolute; inset: 0; overflow: hidden; }
+.canvas { position: absolute; inset: 0; overflow: hidden; cursor: grab; user-select: none; }
+.canvas.panning, .canvas.pan-tool-active { cursor: grabbing; }
 .canvas-grid {
   position: absolute;
   inset: 0;
@@ -278,6 +279,7 @@ button { color: inherit; }
 .nodes-layer { z-index: 2; }
 
 .edge-path { fill: none; stroke: #514a70; stroke-width: 2; }
+.connection-preview { stroke: var(--purple-2); stroke-dasharray: 6 4; pointer-events: none; }
 .edge-path.active { stroke: var(--purple-2); filter: drop-shadow(0 0 4px rgba(149,127,255,.5)); }
 .edge-path.success { stroke: var(--green); }
 .edge-label { fill: #a59bbf; font: 600 9px "DM Sans", sans-serif; }
@@ -331,6 +333,7 @@ button { color: inherit; }
 .handle.output.true { top: 32px; border-color: var(--green); }
 .handle.output.false { top: 64px; border-color: var(--red); }
 .handle:hover { transform: scale(1.3); background: var(--purple); }
+.handle.connecting { transform: scale(1.35); border-color: var(--purple-2); background: var(--purple); box-shadow: 0 0 0 5px rgba(118,87,255,.15); }
 .handle-label { position: absolute; right: 9px; color: var(--muted); font-size: 8px; pointer-events: none; }
 .handle-label.true { top: 27px; }
 .handle-label.false { top: 59px; }

@@ -16,6 +16,10 @@
     future: [],
     dirty: false,
     dragging: null,
+    panning: null,
+    connectionDrag: null,
+    suppressCanvasClick: false,
+    suppressHandleClick: false,
   };
 
   const dom = {
@@ -209,19 +213,39 @@
         selectNode(element.dataset.nodeId);
       });
       $$(".handle", element).forEach((handle) => {
-        handle.addEventListener("mousedown", (event) => event.stopPropagation());
-        handle.addEventListener("click", (event) => handleConnection(event, element.dataset.nodeId, handle));
+        handle.addEventListener("mousedown", (event) => {
+          event.stopPropagation();
+          if (handle.dataset.handle !== "input") {
+            startConnectionDrag(event, element.dataset.nodeId, handle);
+          }
+        });
+        handle.addEventListener("click", (event) => {
+          if (state.suppressHandleClick) {
+            event.stopPropagation();
+            return;
+          }
+          handleConnection(event, element.dataset.nodeId, handle);
+        });
       });
     });
   }
 
-  function edgePath(source, target) {
-    const sx = source.position.x + 218;
-    const sy = source.position.y + 45;
-    const tx = target.position.x;
-    const ty = target.position.y + 45;
+  function sourceAnchor(source, sourceHandle = "default") {
+    const offsets = { true: 33, false: 65, default: 45 };
+    return {
+      x: source.position.x + 218,
+      y: source.position.y + (offsets[sourceHandle] || offsets.default),
+    };
+  }
+
+  function edgePathBetween(sx, sy, tx, ty) {
     const curve = Math.max(70, Math.abs(tx - sx) * 0.45);
     return `M ${sx} ${sy} C ${sx + curve} ${sy}, ${tx - curve} ${ty}, ${tx} ${ty}`;
+  }
+
+  function edgePath(source, target, sourceHandle = "default") {
+    const start = sourceAnchor(source, sourceHandle);
+    return edgePathBetween(start.x, start.y, target.position.x, target.position.y + 45);
   }
 
   function renderEdges() {
@@ -236,9 +260,10 @@
           source.type === "condition" && edge.source_handle !== "default"
             ? `<text class="edge-label" x="${(source.position.x + target.position.x + 218) / 2}" y="${(source.position.y + target.position.y) / 2 + 35}">${edge.source_handle === "true" ? "SIM" : "NÃO"}</text>`
             : "";
-        return `<g data-edge-id="${edge.id}"><path class="edge-path" d="${edgePath(source, target)}"></path>${label}</g>`;
+        return `<g data-edge-id="${edge.id}"><path class="edge-path" d="${edgePath(source, target, edge.source_handle)}"></path>${label}</g>`;
       })
       .join("");
+    renderConnectionPreview();
   }
 
   function renderMinimap() {
@@ -253,11 +278,41 @@
 
   function applyTransform() {
     dom.stage.style.transform = `translate(${state.pan.x}px, ${state.pan.y}px) scale(${state.zoom})`;
+    const grid = $(".canvas-grid", dom.canvas);
+    grid.style.backgroundPosition = `${state.pan.x}px ${state.pan.y}px`;
+    grid.style.backgroundSize = `${22 * state.zoom}px ${22 * state.zoom}px`;
     $("#zoom-value").textContent = `${Math.round(state.zoom * 100)}%`;
   }
 
+  function canvasPoint(clientX, clientY) {
+    const rect = dom.canvas.getBoundingClientRect();
+    return {
+      x: (clientX - rect.left - state.pan.x) / state.zoom,
+      y: (clientY - rect.top - state.pan.y) / state.zoom,
+    };
+  }
+
+  function setZoom(nextZoom, clientX = null, clientY = null) {
+    const zoom = Math.min(2, Math.max(0.25, nextZoom));
+    const rect = dom.canvas.getBoundingClientRect();
+    const focusX = clientX == null ? rect.left + rect.width / 2 : clientX;
+    const focusY = clientY == null ? rect.top + rect.height / 2 : clientY;
+    const localX = focusX - rect.left;
+    const localY = focusY - rect.top;
+    const worldX = (localX - state.pan.x) / state.zoom;
+    const worldY = (localY - state.pan.y) / state.zoom;
+    state.pan.x = localX - worldX * zoom;
+    state.pan.y = localY - worldY * zoom;
+    state.zoom = zoom;
+    applyTransform();
+  }
+
   function startNodeDrag(event) {
-    if (event.button !== 0 || event.target.closest(".handle,button")) return;
+    if (
+      event.button !== 0 ||
+      event.target.closest(".handle,button") ||
+      $("#pan-tool").classList.contains("active")
+    ) return;
     const id = event.currentTarget.dataset.nodeId;
     const node = state.workflow.nodes.find((item) => item.id === id);
     if (!node) return;
@@ -275,22 +330,122 @@
   }
 
   window.addEventListener("mousemove", (event) => {
-    if (!state.dragging) return;
-    const drag = state.dragging;
-    drag.node.position.x = Math.max(0, drag.originX + (event.clientX - drag.startX) / state.zoom);
-    drag.node.position.y = Math.max(0, drag.originY + (event.clientY - drag.startY) / state.zoom);
-    const element = $(`[data-node-id="${drag.node.id}"]`, dom.nodes);
-    element.style.left = `${drag.node.position.x}px`;
-    element.style.top = `${drag.node.position.y}px`;
-    renderEdges();
-    renderMinimap();
+    if (state.dragging) {
+      const drag = state.dragging;
+      drag.node.position.x = drag.originX + (event.clientX - drag.startX) / state.zoom;
+      drag.node.position.y = drag.originY + (event.clientY - drag.startY) / state.zoom;
+      const element = $(`[data-node-id="${drag.node.id}"]`, dom.nodes);
+      element.style.left = `${drag.node.position.x}px`;
+      element.style.top = `${drag.node.position.y}px`;
+      renderEdges();
+      renderMinimap();
+    }
+    if (state.panning) {
+      const pan = state.panning;
+      const dx = event.clientX - pan.startX;
+      const dy = event.clientY - pan.startY;
+      pan.moved ||= Math.abs(dx) + Math.abs(dy) > 3;
+      state.pan.x = pan.originX + dx;
+      state.pan.y = pan.originY + dy;
+      applyTransform();
+    }
+    if (state.connectionDrag) {
+      const connection = state.connectionDrag;
+      connection.clientX = event.clientX;
+      connection.clientY = event.clientY;
+      connection.moved ||= Math.hypot(
+        event.clientX - connection.startX,
+        event.clientY - connection.startY
+      ) > 3;
+      renderEdges();
+    }
   });
 
-  window.addEventListener("mouseup", () => {
-    if (!state.dragging) return;
-    state.dragging = null;
-    markDirty();
+  window.addEventListener("mouseup", (event) => {
+    if (state.dragging) {
+      state.dragging = null;
+      markDirty();
+    }
+    if (state.panning) {
+      if (state.panning.moved) {
+        state.suppressCanvasClick = true;
+        setTimeout(() => (state.suppressCanvasClick = false), 0);
+      }
+      state.panning = null;
+      dom.canvas.classList.remove("panning");
+    }
+    if (state.connectionDrag) finishConnectionDrag(event);
   });
+
+  function startConnectionDrag(event, nodeId, handle) {
+    if (event.button !== 0) return;
+    state.connectFrom = { nodeId, handle: handle.dataset.handle };
+    state.connectionDrag = {
+      startX: event.clientX,
+      startY: event.clientY,
+      clientX: event.clientX,
+      clientY: event.clientY,
+      moved: false,
+    };
+    handle.classList.add("connecting");
+    renderEdges();
+    event.preventDefault();
+  }
+
+  function renderConnectionPreview() {
+    if (!state.connectionDrag || !state.connectFrom) return;
+    const source = state.workflow.nodes.find((node) => node.id === state.connectFrom.nodeId);
+    if (!source) return;
+    const start = sourceAnchor(source, state.connectFrom.handle);
+    const end = canvasPoint(state.connectionDrag.clientX, state.connectionDrag.clientY);
+    dom.edges.insertAdjacentHTML(
+      "beforeend",
+      `<path class="edge-path connection-preview" d="${edgePathBetween(
+        start.x,
+        start.y,
+        end.x,
+        end.y
+      )}"></path>`
+    );
+  }
+
+  function createConnection(source, targetId) {
+    if (!source || source.nodeId === targetId) return false;
+    const duplicate = state.workflow.edges.some(
+      (edge) => edge.source === source.nodeId && edge.target === targetId
+    );
+    if (duplicate) {
+      toast("Esses nós já estão conectados.", "error");
+      return false;
+    }
+    snapshot();
+    state.workflow.edges.push({
+      id: uid("edge"),
+      source: source.nodeId,
+      target: targetId,
+      source_handle: source.handle,
+    });
+    markDirty();
+    return true;
+  }
+
+  function finishConnectionDrag(event) {
+    const drag = state.connectionDrag;
+    const source = state.connectFrom;
+    const targetHandle = document.elementFromPoint(event.clientX, event.clientY)?.closest(".handle.input");
+    const targetNode = targetHandle?.closest(".flow-node");
+    state.connectionDrag = null;
+    $$(".handle.connecting", dom.nodes).forEach((handle) => handle.classList.remove("connecting"));
+    if (targetNode && targetNode.dataset.nodeId !== source?.nodeId) {
+      createConnection(source, targetNode.dataset.nodeId);
+      state.connectFrom = null;
+      state.suppressHandleClick = true;
+      setTimeout(() => (state.suppressHandleClick = false), 0);
+    } else if (drag.moved) {
+      state.connectFrom = null;
+    }
+    renderEdges();
+  }
 
   function handleConnection(event, nodeId, handle) {
     event.stopPropagation();
@@ -302,21 +457,9 @@
       return;
     }
     if (!state.connectFrom || state.connectFrom.nodeId === nodeId) return;
-    const duplicate = state.workflow.edges.some(
-      (edge) => edge.source === state.connectFrom.nodeId && edge.target === nodeId
-    );
-    if (!duplicate) {
-      snapshot();
-      state.workflow.edges.push({
-        id: uid("edge"),
-        source: state.connectFrom.nodeId,
-        target: nodeId,
-        source_handle: state.connectFrom.handle,
-      });
-      markDirty();
-      renderEdges();
-    }
+    createConnection(state.connectFrom, nodeId);
     state.connectFrom = null;
+    renderEdges();
   }
 
   function addNode(type, point = null) {
@@ -645,6 +788,8 @@
       }
       if (event.key === "Escape") {
         state.connectFrom = null;
+        state.connectionDrag = null;
+        renderEdges();
         dom.drawer.classList.remove("open");
       }
     });
@@ -665,7 +810,39 @@
         y: (event.clientY - rect.top - state.pan.y) / state.zoom - 45,
       });
     });
+    dom.canvas.addEventListener("mousedown", (event) => {
+      const panToolActive = $("#pan-tool").classList.contains("active");
+      const isBackground =
+        event.target === dom.canvas ||
+        event.target.classList.contains("canvas-grid") ||
+        event.target === dom.stage ||
+        event.target === dom.nodes ||
+        event.target === dom.edges;
+      if (
+        (!isBackground && !panToolActive) ||
+        (event.button !== 0 && event.button !== 1) ||
+        event.target.closest(".handle,button")
+      ) return;
+      state.panning = {
+        startX: event.clientX,
+        startY: event.clientY,
+        originX: state.pan.x,
+        originY: state.pan.y,
+        moved: false,
+      };
+      dom.canvas.classList.add("panning");
+      event.preventDefault();
+    });
+    dom.canvas.addEventListener(
+      "wheel",
+      (event) => {
+        event.preventDefault();
+        setZoom(state.zoom * Math.exp(-event.deltaY * 0.0015), event.clientX, event.clientY);
+      },
+      { passive: false }
+    );
     dom.canvas.addEventListener("click", (event) => {
+      if (state.suppressCanvasClick) return;
       if (event.target === dom.canvas || event.target.classList.contains("canvas-grid")) {
         state.selectedId = null;
         renderNodes();
@@ -685,13 +862,11 @@
     $("#redo-button").addEventListener("click", redo);
     $("#fit-view").addEventListener("click", fitView);
     $("#zoom-value").addEventListener("click", fitView);
-    $("#zoom-in").addEventListener("click", () => {
-      state.zoom = Math.min(1.6, state.zoom + 0.1);
-      applyTransform();
-    });
-    $("#zoom-out").addEventListener("click", () => {
-      state.zoom = Math.max(0.35, state.zoom - 0.1);
-      applyTransform();
+    $("#zoom-in").addEventListener("click", () => setZoom(state.zoom + 0.1));
+    $("#zoom-out").addEventListener("click", () => setZoom(state.zoom - 0.1));
+    $("#pan-tool").addEventListener("click", (event) => {
+      event.currentTarget.classList.toggle("active");
+      dom.canvas.classList.toggle("pan-tool-active", event.currentTarget.classList.contains("active"));
     });
     dom.workflowName.addEventListener("change", () => {
       state.workflow.name = dom.workflowName.value.trim() || "Workflow sem nome";
