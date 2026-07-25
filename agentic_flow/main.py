@@ -14,6 +14,7 @@ from pydantic import BaseModel, Field, field_validator
 from starlette.middleware.sessions import SessionMiddleware
 
 from .catalog import NODE_CATALOG
+from .databases import DATABASE_TYPES, DATABASE_TYPE_MAP, DatabaseRuntime
 from .engine import WorkflowEngine, validate_workflow
 from .models import Edge, Node, Position, RunRequest, Workflow, WorkflowCreate
 from .providers import PROVIDER_TYPES, PROVIDER_TYPE_MAP, ProviderRuntime
@@ -22,6 +23,7 @@ from .templates import instantiate_template, template_catalog
 from .ui import (
     render_access_page,
     render_auth_page,
+    render_databases_page,
     render_dashboard,
     render_page,
     render_providers_page,
@@ -68,6 +70,25 @@ class ProviderPayload(BaseModel):
         return value
 
 
+class DatabaseConnectionPayload(BaseModel):
+    name: str = Field(min_length=2, max_length=120)
+    type: str
+    host: str = Field(default="", max_length=255)
+    port: int | None = Field(default=None, ge=1, le=65535)
+    database_name: str = Field(min_length=1, max_length=500)
+    username: str = Field(default="", max_length=255)
+    secret: str = Field(default="", max_length=20000)
+    options: dict[str, Any] = Field(default_factory=dict)
+    enabled: bool = True
+
+    @field_validator("type")
+    @classmethod
+    def known_database_type(cls, value: str) -> str:
+        if value not in DATABASE_TYPE_MAP:
+            raise ValueError("Tipo de banco de dados desconhecido.")
+        return value
+
+
 class UserCreatePayload(BaseModel):
     name: str = Field(min_length=2, max_length=120)
     email: str = Field(min_length=5, max_length=255)
@@ -95,6 +116,7 @@ class TeamPolicyPayload(BaseModel):
     edit_workflows: bool = False
     run_workflows: bool = True
     manage_providers: bool = False
+    manage_databases: bool = False
     allowed_node_types: list[str] | None = None
 
 
@@ -201,7 +223,10 @@ def create_app(database: str | Path | None = None) -> FastAPI:
         os.getenv("SESSION_SECRET", "dev-only-change-this-session-secret"),
     )
     provider_runtime = ProviderRuntime(store, encryption_secret)
-    engine = WorkflowEngine(provider_runtime, store)
+    database_runtime = DatabaseRuntime(store, encryption_secret)
+    engine = WorkflowEngine(
+        provider_runtime, store, database_runtime=database_runtime
+    )
     app.state.store = store
     app.state.engine = engine
     app.add_middleware(
@@ -426,6 +451,12 @@ def create_app(database: str | Path | None = None) -> FastAPI:
         user, workspace, _ = require_permission(request, "manage_providers")
         return user, workspace
 
+    def require_database_manager(
+        request: Request,
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
+        user, workspace, _ = require_permission(request, "manage_databases")
+        return user, workspace
+
     @app.get("/api/users")
     def users(request: Request):
         user, workspace, _ = require_permission(request, "manage_teams")
@@ -560,6 +591,36 @@ def create_app(database: str | Path | None = None) -> FastAPI:
         auth_context(request)
         return PROVIDER_TYPES
 
+    @app.get(
+        "/settings/databases",
+        response_class=HTMLResponse,
+        include_in_schema=False,
+    )
+    def databases_page(request: Request):
+        try:
+            user, workspace = require_database_manager(request)
+        except HTTPException as exc:
+            if exc.status_code == 401:
+                return RedirectResponse("/login", status_code=303)
+            raise
+        return render_databases_page(
+            store.list_database_connections(workspace["id"]),
+            DATABASE_TYPES,
+            user,
+            workspace,
+            store.list_workspaces(user["id"]),
+        )
+
+    @app.get("/api/database-types")
+    def database_types(request: Request):
+        auth_context(request)
+        return DATABASE_TYPES
+
+    @app.get("/api/database-connections")
+    def database_connections(request: Request):
+        _, workspace = auth_context(request)
+        return store.list_database_connections(workspace["id"])
+
     @app.get("/api/providers")
     def providers(request: Request):
         _, workspace = auth_context(request)
@@ -629,6 +690,79 @@ def create_app(database: str | Path | None = None) -> FastAPI:
             api_key_encrypted=provider_runtime.encrypt_key(payload.api_key),
             enabled=payload.enabled,
         )
+
+    def database_values(
+        payload: DatabaseConnectionPayload,
+    ) -> tuple[str, int | None, dict[str, Any]]:
+        definition = DATABASE_TYPE_MAP[payload.type]
+        host = payload.host.strip()
+        port = payload.port or definition.get("default_port")
+        if payload.type not in {"sqlite", "bigquery"} and not host:
+            raise HTTPException(422, "Informe o host do banco de dados.")
+        options = dict(payload.options)
+        return host, port, options
+
+    @app.post("/api/database-connections", status_code=201)
+    def create_database_connection(
+        payload: DatabaseConnectionPayload, request: Request
+    ):
+        _, workspace = require_database_manager(request)
+        host, port, options = database_values(payload)
+        return store.create_database_connection(
+            workspace_id=workspace["id"],
+            name=payload.name.strip(),
+            database_type=payload.type,
+            host=host,
+            port=port,
+            database_name=payload.database_name.strip(),
+            username=payload.username.strip(),
+            secret_encrypted=database_runtime.encrypt_secret(payload.secret),
+            options=options,
+            enabled=payload.enabled,
+        )
+
+    @app.put("/api/database-connections/{connection_id}")
+    def update_database_connection(
+        connection_id: str,
+        payload: DatabaseConnectionPayload,
+        request: Request,
+    ):
+        _, workspace = require_database_manager(request)
+        if not store.get_database_connection(connection_id, workspace["id"]):
+            raise HTTPException(404, "Conexão de banco não encontrada.")
+        host, port, options = database_values(payload)
+        return store.update_database_connection(
+            connection_id,
+            workspace["id"],
+            name=payload.name.strip(),
+            database_type=payload.type,
+            host=host,
+            port=port,
+            database_name=payload.database_name.strip(),
+            username=payload.username.strip(),
+            secret_encrypted=(
+                database_runtime.encrypt_secret(payload.secret)
+                if payload.secret
+                else None
+            ),
+            options=options,
+            enabled=payload.enabled,
+        )
+
+    @app.delete("/api/database-connections/{connection_id}", status_code=204)
+    def delete_database_connection(connection_id: str, request: Request):
+        _, workspace = require_database_manager(request)
+        if not store.delete_database_connection(connection_id, workspace["id"]):
+            raise HTTPException(404, "Conexão de banco não encontrada.")
+        return Response(status_code=204)
+
+    @app.post("/api/database-connections/{connection_id}/test")
+    def test_database_connection(connection_id: str, request: Request):
+        _, workspace = require_database_manager(request)
+        try:
+            return database_runtime.test_connection(connection_id, workspace["id"])
+        except Exception as exc:
+            raise HTTPException(422, f"Falha ao conectar: {exc}") from exc
 
     @app.put("/api/providers/{provider_id}")
     def update_provider(

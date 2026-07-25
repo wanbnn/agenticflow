@@ -50,7 +50,7 @@ programa.
 | Editor visual | Drag-and-drop, conexões, zoom, minimapa, auto-layout, undo/redo e inspetor |
 | Multiagente | Papéis independentes, prompts, campos de entrada/saída e colaboração sequencial ou ramificada |
 | Nós | Entradas tipadas de texto, imagem e vídeo, JSON, Webhook, Prompt, LLM, Agente, Banco de Vetores, RAG, MCP Server, Condição, Documentos, processamento visual de imagens, galeria de frames, Transformação, HTTP, Memória e Saída |
-| Templates | Biblioteca de workflows prontos para documentos, imagens, vídeos, atendimento e pipelines multiagente |
+| Templates | 21 workflows prontos para RAG, Vector DB, MCP, HTTP, memória, condições, bancos SQL, mídia, LLM e equipes de agentes |
 | Conhecimento | Banco de Vetores nativo por nó, ingestão persistente, busca semântica local e RAG conectado a agentes |
 | Provedores | OpenAI, Anthropic, Ollama, Groq, OpenRouter, Gemini, Mistral e APIs compatíveis |
 | Segurança | RBAC Admin/Manager/User, multi-workspace, times, políticas, sessões assinadas e credenciais criptografadas |
@@ -85,11 +85,32 @@ vetorizado localmente e deduplicado antes de ser armazenado no MySQL ou SQLite.
 O modo `append` mantém o conhecimento anterior e `replace` recria o conteúdo da
 coleção a cada execução.
 
-O nó **Busca RAG** seleciona uma dessas bases, consulta os trechos mais próximos
-e publica `rag_context` e `rag_matches` para as próximas etapas. Também é
-possível selecionar o Banco de Vetores diretamente no inspetor de um
-**Agente IA**; nesse caso, o agente recupera e incorpora o contexto
-automaticamente antes de chamar o modelo.
+O nó **Busca RAG** recebe uma dessas bases pela alça `database`, consulta os
+trechos mais próximos e é conectado à alça `tools` de um agente. O agente
+recupera e incorpora o contexto automaticamente antes de chamar o modelo.
+
+### Biblioteca de templates
+
+A biblioteca inclui fluxos prontos para resumo de documentos, otimização de
+imagens, extração visual de frames, pesquisa multiagente, atendimento por
+webhook, ingestão vetorial, conversa com documentos via RAG, agentes com MCP,
+operações combinando RAG e MCP, enriquecimento por HTTP, relay de webhooks,
+memória de contexto e roteamento condicional. Templates que dependem de um
+endpoint ou dado externo exibem no próprio cartão o que precisa ser configurado
+antes da primeira execução.
+
+### Bancos de dados como ferramentas
+
+Cada workspace possui um painel em **Configurações → Bancos de dados** para
+cadastrar, testar, editar e remover conexões. MySQL, PostgreSQL, SQL Server,
+SQLite, BigQuery e MariaDB possuem nós separados no catálogo; o workflow guarda
+somente o ID da conexão, enquanto senhas e service accounts permanecem
+criptografadas no servidor.
+
+Esses nós podem inspecionar schemas, executar consultas de leitura e ser ligados
+à alça `tools` de um Agente IA. O runtime aceita apenas `SELECT`, `WITH`,
+`EXPLAIN`, `SHOW`, `DESCRIBE` e `PRAGMA`, rejeita múltiplas instruções e
+operações de escrita e limita o retorno a no máximo 1.000 linhas.
 
 ### Alças tipadas e ferramentas
 

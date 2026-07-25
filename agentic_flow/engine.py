@@ -11,6 +11,7 @@ import httpx
 from langgraph.graph import END, START, StateGraph
 
 from .catalog import CATALOG_BY_TYPE
+from .databases import DATABASE_NODE_TYPES
 from .mcp import MCPRuntime
 from .media import extract_video_frames, process_image, read_document
 from .models import Node, RunEvent, RunRequest, RunResult, Workflow, utc_now
@@ -172,11 +173,16 @@ def validate_workflow(workflow: Workflow) -> None:
 
 class WorkflowEngine:
     def __init__(
-        self, provider_runtime=None, vector_store=None, mcp_runtime=None
+        self,
+        provider_runtime=None,
+        vector_store=None,
+        mcp_runtime=None,
+        database_runtime=None,
     ):
         self.provider_runtime = provider_runtime
         self.vector_store = vector_store
         self.mcp_runtime = mcp_runtime or MCPRuntime()
+        self.database_runtime = database_runtime
 
     @staticmethod
     def _incoming_result(node: Node, state: FlowState) -> tuple[Any, bool]:
@@ -426,6 +432,18 @@ class WorkflowEngine:
                     "tools": tools,
                 }
                 data[config.get("output_field", "mcp_tools")] = result
+            elif node.type in DATABASE_NODE_TYPES:
+                if not self.database_runtime:
+                    raise RuntimeError(
+                        "O gerenciamento de bancos de dados não está configurado."
+                    )
+                result = self.database_runtime.execute_node(
+                    config=config,
+                    workspace_id=state.get("workspace_id", ""),
+                    data=data,
+                    render=render_template,
+                )
+                data[config.get("output_field", "database_result")] = result
             elif node.type == "condition":
                 actual = lookup(data, config.get("field", ""))
                 expected = config.get("value")
@@ -510,6 +528,20 @@ class WorkflowEngine:
                         )
                         if called:
                             tool_results.append(called)
+                    elif tool_node.get("type") in DATABASE_NODE_TYPES:
+                        if not self.database_runtime:
+                            raise RuntimeError(
+                                "O gerenciamento de bancos de dados não está configurado."
+                            )
+                        tool_results.append(
+                            self.database_runtime.call_for_agent(
+                                tool_config,
+                                prompt,
+                                data,
+                                state.get("workspace_id", ""),
+                                render_template,
+                            )
+                        )
                 if collected_matches:
                     unique_matches = {
                         match["id"]: match for match in collected_matches
@@ -532,7 +564,7 @@ class WorkflowEngine:
                     )
                 if tool_results:
                     prompt = (
-                        f"{prompt}\n\nResultados das ferramentas MCP:\n"
+                        f"{prompt}\n\nResultados das ferramentas conectadas:\n"
                         f"{json.dumps(tool_results, ensure_ascii=False)}"
                     )
                 instructions = render_template(

@@ -7,6 +7,7 @@
   const state = {
     catalog: [],
     providers: [],
+    databaseConnections: [],
     workflow: null,
     permissions: {},
     selectedId: null,
@@ -846,6 +847,24 @@
               .join("")}
           </select>
           <small class="field-help"><a href="/settings/providers">Gerenciar provedores do workspace</a></small>`;
+        } else if (field.type === "database_connection_select") {
+          const options = state.databaseConnections.filter(
+            (connection) =>
+              connection.enabled &&
+              (!field.database_type || connection.type === field.database_type)
+          );
+          control = `<select data-config-key="${field.key}">
+            <option value="">Selecione uma conexão</option>
+            ${options
+              .map(
+                (connection) =>
+                  `<option value="${escapeHtml(connection.id)}" ${
+                    String(value) === connection.id ? "selected" : ""
+                  }>${escapeHtml(connection.name)}</option>`
+              )
+              .join("")}
+          </select>
+          <small class="field-help"><a href="/settings/databases">Gerenciar bancos do workspace</a></small>`;
         } else if (field.type === "node_select") {
           const allowedTypes = field.node_types || [];
           const options = state.workflow.nodes.filter(
@@ -920,6 +939,8 @@
         ? '<div class="provider-note">Conecte a alça database de um Banco de Vetores e leve a alça tool até um Agente IA.</div>'
         : node.type === "mcp_server"
         ? '<div class="provider-note">A alça tool disponibiliza as ferramentas do servidor MCP ao agente conectado.</div>'
+        : node.type.startsWith("database_")
+        ? '<div class="provider-note">Somente consultas de leitura são aceitas. Conecte a alça tool a um Agente IA para disponibilizar schema e dados.</div>'
         : node.type === "webhook"
         ? '<div class="provider-note">A URL é exclusiva deste nó. O corpo JSON recebido vira os dados de entrada e a execução aparece no histórico do workflow.</div>'
         : "";
@@ -1451,15 +1472,17 @@
   async function init() {
     try {
       const workflowId = document.querySelector(".app-shell")?.dataset.workflowId;
-      const [catalog, workflow, providers, context] = await Promise.all([
+      const [catalog, workflow, providers, databaseConnections, context] = await Promise.all([
         api("/api/catalog"),
         api(`/api/workflows/${workflowId}`),
         api("/api/providers"),
+        api("/api/database-connections"),
         api("/api/auth/me"),
       ]);
       state.catalog = catalog;
       state.workflow = workflow;
       state.providers = providers;
+      state.databaseConnections = databaseConnections;
       state.permissions = context.permissions || {};
       renderCatalog();
       hydrateWorkflow();

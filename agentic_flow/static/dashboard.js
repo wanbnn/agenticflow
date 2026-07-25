@@ -149,7 +149,10 @@
                 style="--template-color:${template.color}">
                 <div class="template-card-head">
                   <span class="template-icon">${escapeHtml(template.icon)}</span>
-                  <span class="template-category">${escapeHtml(template.category)}</span>
+                  <div class="template-badges">
+                    ${template.featured ? '<span class="template-featured">Destaque</span>' : ""}
+                    <span class="template-category">${escapeHtml(template.category)}</span>
+                  </div>
                 </div>
                 <h3>${escapeHtml(template.name)}</h3>
                 <p>${escapeHtml(template.description)}</p>
@@ -164,6 +167,11 @@
                     ${template.compatible ? "Usar template" : "Sem permissão"}
                   </button>
                 </div>
+                ${
+                  template.setup_hint
+                    ? `<small class="template-setup"><strong>Antes de executar:</strong> ${escapeHtml(template.setup_hint)}</small>`
+                    : ""
+                }
                 ${
                   template.blocked_node_types.length
                     ? `<small class="template-blocked">Nós bloqueados: ${template.blocked_node_types.join(", ")}</small>`
@@ -182,7 +190,11 @@
       const response = await fetch("/api/templates");
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.detail || "Não foi possível carregar os templates.");
-      templates = payload;
+      templates = payload.sort(
+        (left, right) =>
+          Number(Boolean(right.featured)) - Number(Boolean(left.featured)) ||
+          left.name.localeCompare(right.name, "pt-BR")
+      );
       const categories = ["Todos", ...new Set(templates.map((item) => item.category))];
       document.querySelector("#template-filters").innerHTML = categories
         .map(

@@ -855,8 +855,10 @@ button { color: inherit; }
 .template-card:hover { transform: translateY(-2px); border-color: #45405a; }
 .template-card.locked { opacity: .65; }
 .template-card-head { display: flex; justify-content: space-between; align-items: center; }
+.template-badges { display: flex; align-items: center; gap: 4px; }
 .template-icon { width: 38px; height: 38px; display: grid; place-items: center; border-radius: 9px; background: color-mix(in srgb,var(--template-color) 18%,#191920); color: var(--template-color); font-size: 9px; font-weight: 800; }
 .template-category { padding: 4px 7px; border: 1px solid var(--line); border-radius: 10px; color: var(--muted); font-size: 7px; }
+.template-featured { padding: 4px 7px; border-radius: 10px; background: rgba(118,87,255,.14); color: #b9abff; font-size: 7px; }
 .template-card h3 { margin: 16px 0 6px; font: 600 13px "Manrope",sans-serif; }
 .template-card > p { height: 42px; margin: 0; color: var(--muted); font-size: 9px; line-height: 1.55; overflow: hidden; }
 .template-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 12px; }
@@ -864,6 +866,18 @@ button { color: inherit; }
 .template-card-footer { display: flex; justify-content: space-between; align-items: center; margin-top: 15px; padding-top: 11px; border-top: 1px solid var(--line-soft); color: var(--muted-2); font-size: 8px; }
 .template-card-footer .compact { height: 30px; padding: 0 10px; font-size: 8px; }
 .template-blocked { display: block; margin-top: 7px; color: var(--red); font-size: 7px; }
+.template-setup {
+  display: block;
+  margin-top: 8px;
+  padding: 7px 8px;
+  border: 1px solid #353047;
+  border-radius: 7px;
+  background: rgba(118,87,255,.05);
+  color: #918aa8;
+  font-size: 7px;
+  line-height: 1.45;
+}
+.template-setup strong { color: #b7abec; }
 .template-loading,.template-empty { grid-column: 1/-1; min-height: 180px; display: grid; place-items: center; border: 1px dashed var(--line); border-radius: 10px; color: var(--muted); font-size: 10px; }
 .modal-backdrop { position: fixed; z-index: 100; inset: 0; display: grid; place-items: center; padding: 20px; background: rgba(4,4,7,.72); backdrop-filter: blur(6px); }
 .workflow-modal { position: relative; width: min(440px,100%); padding: 27px; border: 1px solid var(--line); border-radius: 14px; background: #17171d; box-shadow: 0 24px 70px rgba(0,0,0,.5); }
@@ -913,6 +927,13 @@ button { color: inherit; }
 .provider-form-actions { display: grid; grid-template-columns: auto 1fr auto auto; gap: 8px; margin-top: 12px; }
 .button.danger { background: rgba(251,113,133,.08); border-color: #63313a; color: #ff94a5; }
 .provider-success { border-color: #265b3a; background: rgba(74,222,128,.08); color: var(--green); }
+.database-logo { background: color-mix(in srgb,var(--database-color,#7657ff) 24%,#191920); color: var(--database-color,#b7a9ff); }
+.database-card code { height: 30px; }
+.database-form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 12px; }
+.database-form-grid .database-secret-field { grid-column: 1/-1; }
+.database-secret-field textarea { min-height: 66px; resize: vertical; }
+.databases-shell .security-banner { border-color: #234538; background: rgba(34,197,94,.045); }
+.databases-shell .security-icon { color: var(--green); }
 
 /* Access, teams and policies */
 .access-main { padding-top: 44px; }
@@ -1011,6 +1032,8 @@ button { color: inherit; }
   .template-library-toolbar { align-items: stretch; flex-direction: column; }
   .template-search { width: 100%; }
   .provider-grid { grid-template-columns: 1fr; }
+  .database-form-grid { grid-template-columns: 1fr; }
+  .database-form-grid .database-secret-field { grid-column: auto; }
   .dashboard-main { width: calc(100% - 32px); padding-top: 32px; }
   .access-grid, .team-grid, .access-stats { grid-template-columns: 1fr; }
   .access-user-row { grid-template-columns: 32px 1fr auto; }

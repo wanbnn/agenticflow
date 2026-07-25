@@ -245,12 +245,24 @@ def test_workflow_template_library_creates_ready_to_edit_workflow(tmp_path):
     templates = client.get("/api/templates")
     assert templates.status_code == 200
     by_id = {item["id"]: item for item in templates.json()}
+    assert len(by_id) >= 15
     assert by_id["document-summary"]["compatible"] is True
     assert {"file", "agent", "output"}.issubset(
         by_id["document-summary"]["node_types"]
     )
     assert "image_input" in by_id["image-optimizer"]["node_types"]
     assert "video_input" in by_id["video-to-frames"]["node_types"]
+    assert {
+        "vector_database",
+        "rag",
+        "mcp_server",
+        "http",
+        "memory",
+        "condition",
+    }.issubset(
+        set().union(*(set(template["node_types"]) for template in by_id.values()))
+    )
+    assert "setup_hint" in by_id["mcp-tool-agent"]
 
     created = client.post(
         "/api/templates/document-summary/instantiate",
@@ -269,6 +281,68 @@ def test_workflow_template_library_creates_ready_to_edit_workflow(tmp_path):
     assert client.post(
         "/api/templates/inexistente/instantiate", json={}
     ).status_code == 404
+
+
+def test_advanced_templates_wire_resources_and_execute_core_flows(tmp_path):
+    client = TestClient(create_app(tmp_path / "advanced-templates.db"))
+    bootstrap(client)
+
+    rag_created = client.post(
+        "/api/templates/document-rag-assistant/instantiate", json={}
+    )
+    assert rag_created.status_code == 201
+    rag_workflow = rag_created.json()
+    resource_edges = {
+        (
+            edge["source"],
+            edge["source_handle"],
+            edge["target"],
+            edge["target_handle"],
+        )
+        for edge in rag_workflow["edges"]
+    }
+    assert ("vector", "database", "rag", "database") in resource_edges
+    assert ("rag", "tool", "agent", "tools") in resource_edges
+    rag_result = client.post(
+        f"/api/workflows/{rag_workflow['id']}/run",
+        json={
+            "input": {
+                "message": "Qual é o prazo de suporte?",
+                "file": {
+                    "name": "politica.txt",
+                    "mime_type": "text/plain",
+                    "data": "O plano Enterprise oferece suporte prioritário em até duas horas.",
+                },
+            }
+        },
+    ).json()
+    assert rag_result["status"] == "success"
+    assert "suporte prioritário" in rag_result["output"]
+
+    conditional = client.post(
+        "/api/templates/conditional-priority-triage/instantiate", json={}
+    ).json()
+    urgent = client.post(
+        f"/api/workflows/{conditional['id']}/run",
+        json={"input": {"message": "Sistema indisponível", "priority": "high"}},
+    ).json()
+    regular = client.post(
+        f"/api/workflows/{conditional['id']}/run",
+        json={"input": {"message": "Dúvida de cadastro", "priority": "normal"}},
+    ).json()
+    assert urgent["output"].startswith("URGENTE")
+    assert "fila padrão" in regular["output"]
+
+    mcp_created = client.post(
+        "/api/templates/mcp-tool-agent/instantiate", json={}
+    ).json()
+    mcp_edge = next(
+        edge
+        for edge in mcp_created["edges"]
+        if edge["source"] == "mcp"
+    )
+    assert mcp_edge["source_handle"] == "tool"
+    assert mcp_edge["target_handle"] == "tools"
 
 
 def test_admin_manages_visual_ai_providers_without_exposing_key(tmp_path):

@@ -567,6 +567,21 @@ def Dashboard(props):
                             "a",
                             {
                                 "className": "icon-button settings-link",
+                                "href": "/settings/databases",
+                                "title": "Bancos de dados",
+                            },
+                            "DB",
+                        )
+                    ]
+                    if permissions.get("manage_databases")
+                    else []
+                ),
+                *(
+                    [
+                        h(
+                            "a",
+                            {
+                                "className": "icon-button settings-link",
                                 "href": "/settings/providers",
                                 "title": "Provedores de IA",
                             },
@@ -1103,6 +1118,345 @@ def render_providers_page(
         body,
         "Provedores de IA · Agentic Flow",
         ["/static/workspace.js", "/static/providers.js"],
+    )
+
+
+def DatabasesPage(props):
+    connections = props.get("connections", [])
+    database_types = props.get("database_types", [])
+    user = props["user"]
+    workspace = props["workspace"]
+    workspaces = props.get("workspaces", [workspace])
+    return h(
+        "div",
+        {"className": "dashboard-shell providers-shell databases-shell"},
+        h(
+            "header",
+            {"className": "dashboard-topbar"},
+            h(Brand, None),
+            h(WorkspaceSwitcher, {"workspace": workspace, "workspaces": workspaces}),
+            h(
+                "div",
+                {"className": "user-menu"},
+                h(
+                    "a",
+                    {"className": "button secondary", "href": "/settings/providers"},
+                    "Provedores de IA",
+                ),
+                h(
+                    "a",
+                    {"className": "button secondary", "href": "/dashboard"},
+                    "← Workflows",
+                ),
+                h("span", {"className": "user-avatar"}, user["name"][:1].upper()),
+            ),
+        ),
+        h(
+            "main",
+            {"className": "dashboard-main"},
+            h(
+                "section",
+                {"className": "dashboard-heading"},
+                h(
+                    "div",
+                    None,
+                    h("span", {"className": "auth-kicker"}, "DADOS DO WORKSPACE"),
+                    h("h1", None, "Conexões de bancos"),
+                    h(
+                        "p",
+                        None,
+                        "Centralize conexões seguras para agentes analisarem schemas e dados.",
+                    ),
+                ),
+                h(
+                    "button",
+                    {"className": "button primary", "id": "new-database-button"},
+                    h("span", None, "+"),
+                    "Adicionar banco",
+                ),
+            ),
+            h(
+                "div",
+                {"className": "security-banner"},
+                h("span", {"className": "security-icon"}, "▣"),
+                h(
+                    "div",
+                    None,
+                    h("strong", None, "Acesso somente leitura"),
+                    h(
+                        "p",
+                        None,
+                        "Senhas e credenciais são criptografadas. Os nós bloqueiam comandos de escrita e limitam o volume retornado.",
+                    ),
+                ),
+            ),
+            h(
+                "section",
+                {"className": "provider-grid", "id": "database-grid"},
+                *[
+                    h(
+                        "article",
+                        {
+                            "className": "provider-card database-card",
+                            "data-database-id": connection["id"],
+                        },
+                        h(
+                            "div",
+                            {"className": "provider-card-head"},
+                            h(
+                                "span",
+                                {"className": "provider-logo database-logo"},
+                                connection["type"][:2].upper(),
+                            ),
+                            h(
+                                "span",
+                                {
+                                    "className": "provider-status active"
+                                    if connection["enabled"]
+                                    else "provider-status",
+                                },
+                                "Ativo" if connection["enabled"] else "Inativo",
+                            ),
+                        ),
+                        h("h2", None, connection["name"]),
+                        h("p", None, connection["type"].replace("_", " ").title()),
+                        h(
+                            "code",
+                            None,
+                            connection["database_name"]
+                            if connection["type"] in {"sqlite", "bigquery"}
+                            else f"{connection['host']}:{connection.get('port') or ''}/{connection['database_name']}",
+                        ),
+                        h(
+                            "div",
+                            {"className": "provider-card-actions"},
+                            h(
+                                "span",
+                                None,
+                                "● Credencial protegida"
+                                if connection["has_secret"]
+                                else "○ Sem credencial",
+                            ),
+                            h(
+                                "button",
+                                {
+                                    "className": "provider-edit",
+                                    "data-edit-database": connection["id"],
+                                },
+                                "Editar",
+                            ),
+                        ),
+                    )
+                    for connection in connections
+                ],
+                h(
+                    "button",
+                    {
+                        "className": "provider-card provider-new-card",
+                        "id": "new-database-card",
+                    },
+                    h("span", {"className": "new-card-plus"}, "+"),
+                    h("strong", None, "Conectar banco"),
+                    h(
+                        "small",
+                        None,
+                        "MySQL, PostgreSQL, SQL Server, SQLite, BigQuery e MariaDB",
+                    ),
+                ),
+            ),
+        ),
+        h(
+            "div",
+            {"className": "modal-backdrop hidden", "id": "database-modal"},
+            h(
+                "form",
+                {
+                    "className": "workflow-modal provider-modal database-modal",
+                    "id": "database-form",
+                },
+                h(
+                    "button",
+                    {
+                        "type": "button",
+                        "className": "modal-close",
+                        "id": "database-modal-close",
+                    },
+                    "×",
+                ),
+                h("span", {"className": "auth-kicker"}, "BANCO DO WORKSPACE"),
+                h("h2", {"id": "database-modal-title"}, "Adicionar banco"),
+                h("input", {"type": "hidden", "id": "database-id"}),
+                h(
+                    "div",
+                    {"className": "database-form-grid"},
+                    h(
+                        "div",
+                        {"className": "field"},
+                        h("label", {"htmlFor": "database-type"}, "Tipo"),
+                        h(
+                            "select",
+                            {"id": "database-type", "required": True},
+                            *[
+                                h(
+                                    "option",
+                                    {"value": item["type"]},
+                                    item["name"],
+                                )
+                                for item in database_types
+                            ],
+                        ),
+                        h(
+                            "small",
+                            {"className": "field-help", "id": "database-type-help"},
+                        ),
+                    ),
+                    h(
+                        "div",
+                        {"className": "field"},
+                        h("label", {"htmlFor": "database-name"}, "Nome visível"),
+                        h("input", {"id": "database-name", "required": True}),
+                    ),
+                    h(
+                        "div",
+                        {"className": "field", "id": "database-host-field"},
+                        h("label", {"htmlFor": "database-host"}, "Host"),
+                        h("input", {"id": "database-host"}),
+                    ),
+                    h(
+                        "div",
+                        {"className": "field", "id": "database-port-field"},
+                        h("label", {"htmlFor": "database-port"}, "Porta"),
+                        h("input", {"id": "database-port", "type": "number"}),
+                    ),
+                    h(
+                        "div",
+                        {"className": "field", "id": "database-database-field"},
+                        h(
+                            "label",
+                            {"htmlFor": "database-database"},
+                            "Database",
+                        ),
+                        h(
+                            "input",
+                            {"id": "database-database", "required": True},
+                        ),
+                        h(
+                            "small",
+                            {
+                                "className": "field-help",
+                                "id": "database-database-help",
+                            },
+                        ),
+                    ),
+                    h(
+                        "div",
+                        {"className": "field", "id": "database-username-field"},
+                        h("label", {"htmlFor": "database-username"}, "Usuário"),
+                        h("input", {"id": "database-username"}),
+                    ),
+                    h(
+                        "div",
+                        {"className": "field database-secret-field"},
+                        h(
+                            "label",
+                            {"htmlFor": "database-secret", "id": "database-secret-label"},
+                            "Senha",
+                        ),
+                        h(
+                            "textarea",
+                            {
+                                "id": "database-secret",
+                                "rows": 3,
+                                "autocomplete": "new-password",
+                            },
+                        ),
+                        h(
+                            "small",
+                            {"className": "field-help"},
+                            "Ao editar, deixe em branco para manter a credencial atual.",
+                        ),
+                    ),
+                    h(
+                        "div",
+                        {
+                            "className": "field hidden",
+                            "id": "database-dataset-field",
+                        },
+                        h("label", {"htmlFor": "database-dataset"}, "Dataset"),
+                        h("input", {"id": "database-dataset"}),
+                    ),
+                ),
+                h(
+                    "label",
+                    {"className": "toggle-field"},
+                    h(
+                        "input",
+                        {
+                            "id": "database-enabled",
+                            "type": "checkbox",
+                            "checked": True,
+                        },
+                    ),
+                    h("span", None),
+                    "Conexão ativa",
+                ),
+                h("div", {"className": "auth-error hidden", "id": "database-error"}),
+                h(
+                    "div",
+                    {"className": "provider-form-actions"},
+                    h(
+                        "button",
+                        {
+                            "type": "button",
+                            "className": "button danger hidden",
+                            "id": "delete-database",
+                        },
+                        "Excluir",
+                    ),
+                    h("span", None),
+                    h(
+                        "button",
+                        {
+                            "type": "button",
+                            "className": "button secondary hidden",
+                            "id": "test-database",
+                        },
+                        "Testar conexão",
+                    ),
+                    h(
+                        "button",
+                        {"className": "button primary", "type": "submit"},
+                        "Salvar",
+                    ),
+                ),
+            ),
+        ),
+    )
+
+
+def render_databases_page(
+    connections: list[dict],
+    database_types: list[dict],
+    user: dict[str, object],
+    workspace: dict[str, str],
+    workspaces: list[dict] | None = None,
+) -> str:
+    body = render_to_static_markup(
+        h(
+            DatabasesPage,
+            {
+                "connections": connections,
+                "database_types": database_types,
+                "user": user,
+                "workspace": workspace,
+                "workspaces": workspaces or [workspace],
+            },
+        )
+    )
+    return _document(
+        body,
+        "Bancos de dados · Agentic Flow",
+        ["/static/workspace.js", "/static/databases.js"],
     )
 
 

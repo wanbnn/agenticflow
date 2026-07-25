@@ -94,6 +94,7 @@
               policy.edit_workflows && "Editar workflows",
               policy.run_workflows && "Executar",
               policy.manage_providers && "Provedores",
+              policy.manage_databases && "Bancos de dados",
             ].filter(Boolean);
             return `
               <article class="team-card">
@@ -179,6 +180,7 @@
             ["edit_workflows", "Editar workflows"],
             ["run_workflows", "Executar workflows"],
             ["manage_providers", "Gerenciar provedores"],
+            ["manage_databases", "Gerenciar bancos"],
           ].map(([key, label]) => `<label class="toggle-field"><input type="checkbox" name="${key}" ${policy[key] ? "checked" : ""}><span></span>${label}</label>`).join("")}
         </div>
         <div class="field"><label>Tipos de nó permitidos <small>opcional</small></label>
@@ -257,6 +259,7 @@
             edit_workflows: data.has("edit_workflows"),
             run_workflows: data.has("run_workflows"),
             manage_providers: data.has("manage_providers"),
+            manage_databases: data.has("manage_databases"),
             allowed_node_types: allowed,
           },
         };

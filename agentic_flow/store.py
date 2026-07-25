@@ -139,6 +139,26 @@ class ProviderRow(Base):
     updated_at: Mapped[str] = mapped_column(String(40), nullable=False)
 
 
+class DatabaseConnectionRow(Base):
+    __tablename__ = "database_connections"
+
+    id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    workspace_id: Mapped[str] = mapped_column(
+        String(40), ForeignKey("workspaces.id", ondelete="CASCADE"), index=True
+    )
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    type: Mapped[str] = mapped_column(String(40), nullable=False)
+    host: Mapped[str] = mapped_column(String(255), default="", nullable=False)
+    port: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    database_name: Mapped[str] = mapped_column(String(500), default="", nullable=False)
+    username: Mapped[str] = mapped_column(String(255), default="", nullable=False)
+    secret_encrypted: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    options_json: Mapped[str] = mapped_column(Text, default="{}", nullable=False)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    created_at: Mapped[str] = mapped_column(String(40), nullable=False)
+    updated_at: Mapped[str] = mapped_column(String(40), nullable=False)
+
+
 class VectorCollectionRow(Base):
     __tablename__ = "vector_collections"
     __table_args__ = (
@@ -597,6 +617,7 @@ class Store:
                 "edit_workflows": True,
                 "run_workflows": True,
                 "manage_providers": True,
+                "manage_databases": True,
                 "manage_teams": True,
                 "allowed_node_types": None,
             }
@@ -618,6 +639,7 @@ class Store:
             "edit_workflows": role == "manager",
             "run_workflows": role == "manager",
             "manage_providers": role == "manager",
+            "manage_databases": role == "manager",
             "manage_teams": role == "manager",
             "allowed_node_types": None,
         }
@@ -626,6 +648,7 @@ class Store:
             "edit_workflows",
             "run_workflows",
             "manage_providers",
+            "manage_databases",
         ):
             permissions[key] = bool(
                 permissions[key] or any(policy.get(key) for policy in policies)
@@ -751,6 +774,145 @@ class Store:
                 select(ProviderRow).where(
                     ProviderRow.id == provider_id,
                     ProviderRow.workspace_id == workspace_id,
+                )
+            )
+            if not row:
+                return False
+            db.delete(row)
+            return True
+
+    @staticmethod
+    def _database_connection_dict(
+        row: DatabaseConnectionRow, include_secret: bool = False
+    ) -> dict[str, object]:
+        result: dict[str, object] = {
+            "id": row.id,
+            "workspace_id": row.workspace_id,
+            "name": row.name,
+            "type": row.type,
+            "host": row.host,
+            "port": row.port,
+            "database_name": row.database_name,
+            "username": row.username,
+            "options": json.loads(row.options_json or "{}"),
+            "enabled": row.enabled,
+            "has_secret": bool(row.secret_encrypted),
+            "created_at": row.created_at,
+            "updated_at": row.updated_at,
+        }
+        if include_secret:
+            result["secret_encrypted"] = row.secret_encrypted
+        return result
+
+    def list_database_connections(
+        self, workspace_id: str
+    ) -> list[dict[str, object]]:
+        with self.Session() as db:
+            rows = db.scalars(
+                select(DatabaseConnectionRow)
+                .where(DatabaseConnectionRow.workspace_id == workspace_id)
+                .order_by(DatabaseConnectionRow.name)
+            ).all()
+            return [self._database_connection_dict(row) for row in rows]
+
+    def get_database_connection(
+        self,
+        connection_id: str,
+        workspace_id: str,
+        include_secret: bool = False,
+    ) -> dict[str, object] | None:
+        with self.Session() as db:
+            row = db.scalar(
+                select(DatabaseConnectionRow).where(
+                    DatabaseConnectionRow.id == connection_id,
+                    DatabaseConnectionRow.workspace_id == workspace_id,
+                )
+            )
+            return (
+                self._database_connection_dict(row, include_secret)
+                if row
+                else None
+            )
+
+    def create_database_connection(
+        self,
+        *,
+        workspace_id: str,
+        name: str,
+        database_type: str,
+        host: str,
+        port: int | None,
+        database_name: str,
+        username: str,
+        secret_encrypted: str,
+        options: dict[str, object],
+        enabled: bool,
+    ) -> dict[str, object]:
+        now = utc_now()
+        row = DatabaseConnectionRow(
+            id=f"dbc-{uuid4().hex[:12]}",
+            workspace_id=workspace_id,
+            name=name,
+            type=database_type,
+            host=host,
+            port=port,
+            database_name=database_name,
+            username=username,
+            secret_encrypted=secret_encrypted,
+            options_json=json.dumps(options, ensure_ascii=False),
+            enabled=enabled,
+            created_at=now,
+            updated_at=now,
+        )
+        with self.Session.begin() as db:
+            db.add(row)
+        return self._database_connection_dict(row)
+
+    def update_database_connection(
+        self,
+        connection_id: str,
+        workspace_id: str,
+        *,
+        name: str,
+        database_type: str,
+        host: str,
+        port: int | None,
+        database_name: str,
+        username: str,
+        secret_encrypted: str | None,
+        options: dict[str, object],
+        enabled: bool,
+    ) -> dict[str, object] | None:
+        with self.Session.begin() as db:
+            row = db.scalar(
+                select(DatabaseConnectionRow).where(
+                    DatabaseConnectionRow.id == connection_id,
+                    DatabaseConnectionRow.workspace_id == workspace_id,
+                )
+            )
+            if not row:
+                return None
+            row.name = name
+            row.type = database_type
+            row.host = host
+            row.port = port
+            row.database_name = database_name
+            row.username = username
+            if secret_encrypted is not None:
+                row.secret_encrypted = secret_encrypted
+            row.options_json = json.dumps(options, ensure_ascii=False)
+            row.enabled = enabled
+            row.updated_at = utc_now()
+        return self._database_connection_dict(row)
+
+    def delete_database_connection(
+        self, connection_id: str, workspace_id: str
+    ) -> bool:
+        with self.Session.begin() as db:
+            row = db.scalar(
+                select(DatabaseConnectionRow).where(
+                    DatabaseConnectionRow.id == connection_id,
+                    DatabaseConnectionRow.workspace_id == workspace_id,
                 )
             )
             if not row:

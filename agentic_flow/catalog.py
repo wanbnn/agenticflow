@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from .databases import DATABASE_TYPES
+
 
 NODE_CATALOG: list[dict[str, Any]] = [
     {
@@ -469,6 +471,80 @@ NODE_CATALOG: list[dict[str, Any]] = [
         ],
     },
 ]
+
+
+def _database_node(definition: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "type": definition["node_type"],
+        "name": definition["name"],
+        "description": (
+            f"Consulta {definition['name']} em modo somente leitura e "
+            "disponibiliza schema e dados ao Agente IA."
+        ),
+        "category": "Bancos de dados",
+        "color": definition["color"],
+        "icon": definition["icon"],
+        "inputs": [
+            {"id": "input", "label": "entrada", "kind": "flow", "multiple": True}
+        ],
+        "outputs": [
+            {"id": "default", "label": "resultado", "kind": "flow"},
+            {"id": "tool", "label": "tool", "kind": "tool"},
+        ],
+        "defaults": {
+            "connection_id": "",
+            "operation": "auto",
+            "query": "",
+            "schema_name": "",
+            "tables": "",
+            "max_rows": 200,
+            "output_field": "database_result",
+        },
+        "fields": [
+            {
+                "key": "connection_id",
+                "label": f"Conexão {definition['name']}",
+                "type": "database_connection_select",
+                "database_type": definition["type"],
+            },
+            {
+                "key": "operation",
+                "label": "Operação",
+                "type": "select",
+                "options": ["auto", "schema", "query"],
+            },
+            {
+                "key": "query",
+                "label": "Consulta de leitura",
+                "type": "textarea",
+                "placeholder": "SELECT * FROM tabela WHERE id = {{id}}",
+            },
+            {
+                "key": "schema_name",
+                "label": "Schema (opcional)",
+                "type": "text",
+            },
+            {
+                "key": "tables",
+                "label": "Tabelas permitidas (separadas por vírgula)",
+                "type": "text",
+            },
+            {
+                "key": "max_rows",
+                "label": "Máximo de linhas",
+                "type": "number",
+            },
+            {
+                "key": "output_field",
+                "label": "Campo de resultado",
+                "type": "text",
+                "advanced": True,
+            },
+        ],
+    }
+
+
+NODE_CATALOG.extend(_database_node(item) for item in DATABASE_TYPES)
 
 
 CATALOG_BY_TYPE = {item["type"]: item for item in NODE_CATALOG}
