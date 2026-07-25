@@ -47,6 +47,83 @@
     }
   });
 
+  const deleteModal = document.querySelector("#delete-workflow-modal");
+  const deleteName = document.querySelector("#delete-workflow-name");
+  const deleteError = document.querySelector("#delete-workflow-error");
+  const confirmDelete = document.querySelector("#confirm-delete-workflow");
+  let workflowToDelete = null;
+
+  function closeDeleteModal() {
+    deleteModal?.classList.add("hidden");
+    workflowToDelete = null;
+    deleteError?.classList.add("hidden");
+  }
+
+  document.querySelector("#workflow-grid")?.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-delete-workflow]");
+    if (!button || !deleteModal) return;
+    event.preventDefault();
+    event.stopPropagation();
+    workflowToDelete = {
+      id: button.dataset.deleteWorkflow,
+      name: button.dataset.workflowName || "este workflow",
+      card: button.closest("[data-workflow-card]"),
+    };
+    deleteName.textContent = workflowToDelete.name;
+    deleteError.classList.add("hidden");
+    deleteModal.classList.remove("hidden");
+    setTimeout(() => confirmDelete.focus(), 50);
+  });
+
+  document
+    .querySelector("#cancel-delete-workflow")
+    ?.addEventListener("click", closeDeleteModal);
+  deleteModal?.addEventListener("click", (event) => {
+    if (event.target === deleteModal) closeDeleteModal();
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && !deleteModal?.classList.contains("hidden")) {
+      closeDeleteModal();
+    }
+  });
+  confirmDelete?.addEventListener("click", async () => {
+    if (!workflowToDelete) return;
+    confirmDelete.disabled = true;
+    confirmDelete.textContent = "Excluindo...";
+    deleteError.classList.add("hidden");
+    try {
+      const response = await fetch(
+        `/api/workflows/${encodeURIComponent(workflowToDelete.id)}`,
+        { method: "DELETE" }
+      );
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}));
+        throw new Error(payload.detail || "Não foi possível excluir o workflow.");
+      }
+      const card = workflowToDelete.card;
+      closeDeleteModal();
+      card?.classList.add("removing");
+      setTimeout(() => {
+        card?.remove();
+        const grid = document.querySelector("#workflow-grid");
+        if (
+          grid &&
+          !grid.querySelector("[data-workflow-card]") &&
+          !grid.querySelector("#new-workflow-card")
+        ) {
+          grid.innerHTML =
+            '<div class="workflow-empty-state">Nenhum workflow neste workspace.</div>';
+        }
+      }, 180);
+    } catch (error) {
+      deleteError.textContent = error.message;
+      deleteError.classList.remove("hidden");
+    } finally {
+      confirmDelete.disabled = false;
+      confirmDelete.textContent = "Excluir workflow";
+    }
+  });
+
   const templateModal = document.querySelector("#template-modal");
   const templateGrid = document.querySelector("#template-grid");
   let templates = [];

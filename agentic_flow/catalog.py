@@ -6,14 +6,78 @@ from typing import Any
 NODE_CATALOG: list[dict[str, Any]] = [
     {
         "type": "input",
-        "name": "Entrada",
-        "description": "Inicia o fluxo com os dados recebidos.",
+        "name": "Entrada JSON",
+        "description": "Entrada genérica para integrações e dados estruturados.",
         "category": "Gatilhos",
         "color": "#7c5cff",
         "icon": "IN",
         "defaults": {"field": "message"},
         "fields": [
             {"key": "field", "label": "Campo principal", "type": "text"},
+        ],
+    },
+    {
+        "type": "text_input",
+        "name": "Entrada de texto",
+        "description": "Recebe texto em um campo amigável no playground.",
+        "category": "Entradas",
+        "color": "#8b5cf6",
+        "icon": "TXT",
+        "inputs": [],
+        "outputs": [
+            {"id": "default", "label": "texto", "kind": "flow", "data_type": "text"}
+        ],
+        "defaults": {"input_key": "text", "placeholder": "Digite ou cole o texto..."},
+        "fields": [
+            {"key": "placeholder", "label": "Texto de orientação", "type": "text"},
+            {
+                "key": "input_key",
+                "label": "Chave técnica",
+                "type": "text",
+                "advanced": True,
+            },
+        ],
+    },
+    {
+        "type": "image_input",
+        "name": "Entrada de imagem",
+        "description": "Permite selecionar ou arrastar uma imagem com pré-visualização.",
+        "category": "Entradas",
+        "color": "#0ea5e9",
+        "icon": "IMG",
+        "inputs": [],
+        "outputs": [
+            {"id": "default", "label": "imagem", "kind": "flow", "data_type": "image"}
+        ],
+        "defaults": {"input_key": "image"},
+        "fields": [
+            {
+                "key": "input_key",
+                "label": "Chave técnica",
+                "type": "text",
+                "advanced": True,
+            }
+        ],
+    },
+    {
+        "type": "video_input",
+        "name": "Entrada de vídeo",
+        "description": "Permite selecionar ou arrastar um vídeo com player integrado.",
+        "category": "Entradas",
+        "color": "#6366f1",
+        "icon": "VID",
+        "inputs": [],
+        "outputs": [
+            {"id": "default", "label": "vídeo", "kind": "flow", "data_type": "video"}
+        ],
+        "defaults": {"input_key": "video"},
+        "fields": [
+            {
+                "key": "input_key",
+                "label": "Chave técnica",
+                "type": "text",
+                "advanced": True,
+            }
         ],
     },
     {
@@ -111,8 +175,8 @@ NODE_CATALOG: list[dict[str, Any]] = [
             },
             {"key": "model", "label": "Modelo (opcional)", "type": "text"},
             {"key": "system_prompt", "label": "Instrução do sistema", "type": "textarea"},
-            {"key": "input_field", "label": "Campo de entrada", "type": "text"},
-            {"key": "output_field", "label": "Campo de saída", "type": "text"},
+            {"key": "input_field", "label": "Campo de entrada", "type": "text", "advanced": True},
+            {"key": "output_field", "label": "Campo de saída", "type": "text", "advanced": True},
             {"key": "rag_top_k", "label": "Trechos recuperados", "type": "number"},
             {
                 "key": "rag_min_score",
@@ -251,8 +315,8 @@ NODE_CATALOG: list[dict[str, Any]] = [
             "max_characters": 200000,
         },
         "fields": [
-            {"key": "input_field", "label": "Campo do arquivo", "type": "text"},
-            {"key": "output_field", "label": "Campo do texto extraído", "type": "text"},
+            {"key": "input_field", "label": "Campo do arquivo", "type": "text", "advanced": True},
+            {"key": "output_field", "label": "Campo do texto extraído", "type": "text", "advanced": True},
             {
                 "key": "format",
                 "label": "Formato",
@@ -282,6 +346,12 @@ NODE_CATALOG: list[dict[str, Any]] = [
         "category": "Arquivos e mídia",
         "color": "#0ea5e9",
         "icon": "IMG",
+        "inputs": [
+            {"id": "input", "label": "imagem", "kind": "flow", "data_type": "image", "multiple": False}
+        ],
+        "outputs": [
+            {"id": "default", "label": "imagem", "kind": "flow", "data_type": "image"}
+        ],
         "defaults": {
             "input_field": "image",
             "output_field": "processed_image",
@@ -292,8 +362,8 @@ NODE_CATALOG: list[dict[str, Any]] = [
             "quality": 90,
         },
         "fields": [
-            {"key": "input_field", "label": "Campo da imagem", "type": "text"},
-            {"key": "output_field", "label": "Campo de saída", "type": "text"},
+            {"key": "input_field", "label": "Campo da imagem", "type": "text", "advanced": True},
+            {"key": "output_field", "label": "Campo de saída", "type": "text", "advanced": True},
             {
                 "key": "operation",
                 "label": "Operação",
@@ -318,6 +388,12 @@ NODE_CATALOG: list[dict[str, Any]] = [
         "category": "Arquivos e mídia",
         "color": "#6366f1",
         "icon": "VID",
+        "inputs": [
+            {"id": "input", "label": "vídeo", "kind": "flow", "data_type": "video", "multiple": False}
+        ],
+        "outputs": [
+            {"id": "default", "label": "frames", "kind": "flow", "data_type": "frames"}
+        ],
         "defaults": {
             "input_field": "video",
             "output_field": "frames",
@@ -327,8 +403,8 @@ NODE_CATALOG: list[dict[str, Any]] = [
             "quality": 88,
         },
         "fields": [
-            {"key": "input_field", "label": "Campo do vídeo", "type": "text"},
-            {"key": "output_field", "label": "Campo dos frames", "type": "text"},
+            {"key": "input_field", "label": "Campo do vídeo", "type": "text", "advanced": True},
+            {"key": "output_field", "label": "Campo dos frames", "type": "text", "advanced": True},
             {"key": "interval_seconds", "label": "Intervalo em segundos", "type": "number"},
             {"key": "max_frames", "label": "Máximo de frames", "type": "number"},
             {
@@ -389,7 +465,7 @@ NODE_CATALOG: list[dict[str, Any]] = [
         "icon": "OUT",
         "defaults": {"field": "response"},
         "fields": [
-            {"key": "field", "label": "Campo de saída", "type": "text"},
+            {"key": "field", "label": "Campo de saída", "type": "text", "advanced": True},
         ],
     },
 ]

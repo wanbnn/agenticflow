@@ -117,7 +117,16 @@ def sample_workflow() -> WorkflowCreate:
         name="Equipe de pesquisa",
         description="Dois agentes colaboram para produzir uma resposta revisada.",
         nodes=[
-            Node(id="input-1", type="input", name="Nova solicitação", position=Position(x=80, y=230), config={"field": "message"}),
+            Node(
+                id="input-1",
+                type="text_input",
+                name="Nova solicitação",
+                position=Position(x=80, y=230),
+                config={
+                    "input_key": "text",
+                    "placeholder": "Descreva o que a equipe deve pesquisar...",
+                },
+            ),
             Node(
                 id="prompt-1",
                 type="prompt",

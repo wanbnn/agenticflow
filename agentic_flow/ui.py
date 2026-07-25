@@ -271,39 +271,45 @@ def RunDrawer(_props):
             h(
                 "div",
                 {"className": "input-panel"},
-                h("label", {"htmlFor": "run-input"}, "Entrada JSON"),
+                h("div", {"className": "typed-run-inputs", "id": "typed-run-inputs"}),
                 h(
-                    "textarea",
-                    {"id": "run-input", "spellcheck": "false"},
-                    '{\n  "message": "Crie um resumo sobre agentes autônomos"\n}',
-                ),
-                h(
-                    "div",
-                    {"className": "asset-input-row"},
+                    "details",
+                    {"className": "advanced-run-input", "id": "advanced-run-input"},
+                    h("summary", None, "Entrada JSON e campos avançados"),
+                    h("label", {"htmlFor": "run-input"}, "Entrada JSON"),
                     h(
-                        "input",
-                        {
-                            "id": "asset-field",
-                            "value": "file",
-                            "placeholder": "campo",
-                            "title": "Campo JSON que receberá o arquivo",
-                        },
+                        "textarea",
+                        {"id": "run-input", "spellcheck": "false"},
+                        '{\n  "message": "Crie um resumo sobre agentes autônomos"\n}',
                     ),
                     h(
-                        "label",
-                        {"className": "button secondary asset-picker", "htmlFor": "asset-file"},
-                        "Anexar arquivo",
+                        "div",
+                        {"className": "asset-input-row"},
+                        h(
+                            "input",
+                            {
+                                "id": "asset-field",
+                                "value": "file",
+                                "placeholder": "campo",
+                                "title": "Campo JSON que receberá o arquivo",
+                            },
+                        ),
+                        h(
+                            "label",
+                            {"className": "button secondary asset-picker", "htmlFor": "asset-file"},
+                            "Anexar arquivo",
+                        ),
+                        h(
+                            "input",
+                            {
+                                "id": "asset-file",
+                                "className": "hidden",
+                                "type": "file",
+                                "accept": ".pdf,.txt,.md,.markdown,.csv,.json,.xml,.html,.yaml,.yml,.docx,.xlsx,image/*,video/*",
+                            },
+                        ),
+                        h("span", {"id": "asset-file-label"}, "PDF, texto, imagem ou vídeo"),
                     ),
-                    h(
-                        "input",
-                        {
-                            "id": "asset-file",
-                            "className": "hidden",
-                            "type": "file",
-                            "accept": ".pdf,.txt,.md,.markdown,.csv,.json,.xml,.html,.yaml,.yml,.docx,.xlsx,image/*,video/*",
-                        },
-                    ),
-                    h("span", {"id": "asset-file-label"}, "PDF, texto, imagem ou vídeo"),
                 ),
                 h(
                     "div",
@@ -532,6 +538,7 @@ def Dashboard(props):
     workspaces = props.get("workspaces", [workspace])
     permissions = props.get("permissions", {})
     can_create = permissions.get("create_workflows", False)
+    can_edit = permissions.get("edit_workflows", False)
     return h(
         "div",
         {"className": "dashboard-shell"},
@@ -615,29 +622,68 @@ def Dashboard(props):
                 {"className": "workflow-grid", "id": "workflow-grid"},
                 *[
                     h(
-                        "a",
-                        {"className": "workflow-card", "href": f"/workflows/{workflow.id}"},
+                        "article",
+                        {
+                            "className": "workflow-card",
+                            "data-workflow-card": workflow.id,
+                        },
                         h(
-                            "div",
-                            {"className": "workflow-card-head"},
-                            h("span", {"className": "workflow-card-icon"}, "⌘"),
-                            h("span", {"className": "version-pill"}, f"v{workflow.version}"),
+                            "a",
+                            {
+                                "className": "workflow-card-link",
+                                "href": f"/workflows/{workflow.id}",
+                            },
+                            h(
+                                "div",
+                                {"className": "workflow-card-head"},
+                                h("span", {"className": "workflow-card-icon"}, "⌘"),
+                                h("span", {"className": "version-pill"}, f"v{workflow.version}"),
+                            ),
+                            h("h2", None, workflow.name),
+                            h(
+                                "p",
+                                None,
+                                workflow.description or "Workflow de agentes sem descrição.",
+                            ),
+                            h(
+                                "div",
+                                {"className": "workflow-meta"},
+                                h("span", None, f"{len(workflow.nodes)} nós"),
+                                h("span", None, f"{len(workflow.edges)} conexões"),
+                            ),
                         ),
-                        h("h2", None, workflow.name),
-                        h(
-                            "p",
-                            None,
-                            workflow.description or "Workflow de agentes sem descrição.",
-                        ),
-                        h(
-                            "div",
-                            {"className": "workflow-meta"},
-                            h("span", None, f"{len(workflow.nodes)} nós"),
-                            h("span", None, f"{len(workflow.edges)} conexões"),
+                        *(
+                            [
+                                h(
+                                    "button",
+                                    {
+                                        "className": "workflow-delete-button",
+                                        "type": "button",
+                                        "title": f"Excluir {workflow.name}",
+                                        "aria-label": f"Excluir workflow {workflow.name}",
+                                        "data-delete-workflow": workflow.id,
+                                        "data-workflow-name": workflow.name,
+                                    },
+                                    "×",
+                                )
+                            ]
+                            if can_edit
+                            else []
                         ),
                     )
                     for workflow in workflows
                 ],
+                *(
+                    [
+                        h(
+                            "div",
+                            {"className": "workflow-empty-state"},
+                            "Nenhum workflow neste workspace.",
+                        )
+                    ]
+                    if not workflows and not can_create
+                    else []
+                ),
                 *(
                     [
                         h(
@@ -652,6 +698,61 @@ def Dashboard(props):
                     else []
                 ),
             ),
+        ),
+        *(
+            [
+                h(
+                    "div",
+                    {"className": "modal-backdrop hidden", "id": "delete-workflow-modal"},
+                    h(
+                        "section",
+                        {
+                            "className": "workflow-modal delete-workflow-dialog",
+                            "role": "dialog",
+                            "aria-modal": "true",
+                            "aria-labelledby": "delete-workflow-title",
+                        },
+                        h("span", {"className": "delete-dialog-icon"}, "×"),
+                        h("span", {"className": "auth-kicker"}, "EXCLUIR WORKFLOW"),
+                        h("h2", {"id": "delete-workflow-title"}, "Excluir este workflow?"),
+                        h(
+                            "p",
+                            None,
+                            "O workflow ",
+                            h("strong", {"id": "delete-workflow-name"}, ""),
+                            " e seu histórico de execuções serão removidos permanentemente.",
+                        ),
+                        h(
+                            "div",
+                            {"className": "auth-error hidden", "id": "delete-workflow-error"},
+                        ),
+                        h(
+                            "div",
+                            {"className": "delete-dialog-actions"},
+                            h(
+                                "button",
+                                {
+                                    "className": "button secondary",
+                                    "type": "button",
+                                    "id": "cancel-delete-workflow",
+                                },
+                                "Cancelar",
+                            ),
+                            h(
+                                "button",
+                                {
+                                    "className": "button danger",
+                                    "type": "button",
+                                    "id": "confirm-delete-workflow",
+                                },
+                                "Excluir workflow",
+                            ),
+                        ),
+                    ),
+                )
+            ]
+            if can_edit
+            else []
         ),
         h(
             "div",

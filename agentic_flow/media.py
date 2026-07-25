@@ -41,7 +41,7 @@ def decode_asset(
     if isinstance(value, dict):
         name = str(value.get("name") or value.get("filename") or default_name)
         mime_type = str(value.get("mime_type") or value.get("content_type") or "")
-        raw = value.get("data", value.get("content", ""))
+        raw = value.get("data", value.get("data_uri", value.get("content", "")))
     if isinstance(raw, bytes):
         payload = raw
     elif isinstance(raw, str) and raw.startswith("data:"):

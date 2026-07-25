@@ -49,7 +49,7 @@ programa.
 | --- | --- |
 | Editor visual | Drag-and-drop, conexões, zoom, minimapa, auto-layout, undo/redo e inspetor |
 | Multiagente | Papéis independentes, prompts, campos de entrada/saída e colaboração sequencial ou ramificada |
-| Nós | Entrada, Webhook, Prompt, LLM, Agente, Banco de Vetores, RAG, MCP Server, Condição, Documentos, Imagens, Vídeo para frames, Transformação, HTTP, Memória e Saída |
+| Nós | Entradas tipadas de texto, imagem e vídeo, JSON, Webhook, Prompt, LLM, Agente, Banco de Vetores, RAG, MCP Server, Condição, Documentos, processamento visual de imagens, galeria de frames, Transformação, HTTP, Memória e Saída |
 | Templates | Biblioteca de workflows prontos para documentos, imagens, vídeos, atendimento e pipelines multiagente |
 | Conhecimento | Banco de Vetores nativo por nó, ingestão persistente, busca semântica local e RAG conectado a agentes |
 | Provedores | OpenAI, Anthropic, Ollama, Groq, OpenRouter, Gemini, Mistral e APIs compatíveis |
@@ -59,9 +59,14 @@ programa.
 
 ### Arquivos e mídia
 
-O playground permite anexar um arquivo diretamente a qualquer campo da entrada
-JSON. Os nós multimídia recebem o asset como data URI/base64 e produzem saídas
-que podem ser conectadas aos próximos nós:
+O playground cria automaticamente o controle adequado para cada nó de entrada:
+campo de texto, seletor de imagem com preview ou seletor de vídeo com player.
+Não é necessário conhecer nomes de campos para conectar e executar esses fluxos.
+A entrada JSON continua disponível como configuração avançada para integrações.
+
+Os resultados de mídia são exibidos visualmente no próprio nó e no painel de
+execução. Imagens possuem preview ampliado, vídeos usam player nativo e a
+extração de frames produz uma galeria navegável com miniaturas e timestamps.
 
 - **Ler documento:** PDF, TXT, Markdown, CSV, JSON, XML, HTML, YAML, DOCX e XLSX.
 - **Processar imagem:** PNG, JPEG, WebP, GIF, BMP e TIFF; inspeção,

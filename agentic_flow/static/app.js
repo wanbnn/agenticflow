@@ -21,6 +21,8 @@
     connectionDrag: null,
     suppressCanvasClick: false,
     suppressHandleClick: false,
+    nodeResults: {},
+    typedAssets: {},
   };
 
   const dom = {
@@ -92,7 +94,7 @@
     const meta = catalogItem(node.type) || {};
     if (direction === "input") {
       return meta.inputs === undefined
-        ? [{ id: "input", label: "entrada", kind: "flow", multiple: true }]
+        ? [{ id: "input", label: "entrada", kind: "flow", data_type: "any", multiple: true }]
         : meta.inputs;
     }
     if (meta.outputs) return meta.outputs;
@@ -100,6 +102,7 @@
       id,
       label: id === "default" ? "saída" : id,
       kind: "flow",
+      data_type: "any",
     }));
   }
 
@@ -145,6 +148,96 @@
           : item,
       2
     );
+  }
+
+  function mediaUri(value, prefix) {
+    const candidate =
+      typeof value === "string"
+        ? value
+        : value?.data_uri || value?.data || "";
+    return typeof candidate === "string" && candidate.startsWith(`data:${prefix}/`)
+      ? candidate
+      : "";
+  }
+
+  function frameItems(value) {
+    if (Array.isArray(value)) {
+      return value.filter((item) => mediaUri(item, "image"));
+    }
+    if (Array.isArray(value?.frames)) {
+      return value.frames.filter((item) => mediaUri(item, "image"));
+    }
+    return [];
+  }
+
+  function renderMedia(value, compact = false) {
+    const frames = frameItems(value);
+    if (frames.length) {
+      if (compact) {
+        return `<div class="node-media-preview frame-strip">
+          ${frames
+            .slice(0, 4)
+            .map(
+              (frame) =>
+                `<img src="${escapeHtml(mediaUri(frame, "image"))}" alt="Frame ${Number(frame.index ?? 0) + 1}">`
+            )
+            .join("")}
+          <span>${frames.length} frames</span>
+        </div>`;
+      }
+      const visible = frames.slice(0, 60);
+      const first = visible[0];
+      return `<section class="media-gallery">
+        <div class="media-gallery-main">
+          <img src="${escapeHtml(mediaUri(first, "image"))}" alt="Frame selecionado">
+          <span>${first.timestamp_seconds != null ? `${first.timestamp_seconds}s` : "Frame 1"}</span>
+        </div>
+        <div class="media-gallery-strip">
+          ${visible
+            .map(
+              (frame, index) => `
+                <button type="button" class="${index === 0 ? "active" : ""}"
+                  data-frame-src="${escapeHtml(mediaUri(frame, "image"))}"
+                  data-frame-label="${frame.timestamp_seconds != null ? `${frame.timestamp_seconds}s` : `Frame ${index + 1}`}">
+                  <img src="${escapeHtml(mediaUri(frame, "image"))}" alt="Frame ${index + 1}">
+                  <small>${frame.timestamp_seconds != null ? `${frame.timestamp_seconds}s` : index + 1}</small>
+                </button>`
+            )
+            .join("")}
+        </div>
+        <div class="media-gallery-meta">${frames.length} frames capturados${frames.length > visible.length ? ` · exibindo ${visible.length}` : ""}</div>
+      </section>`;
+    }
+    const image = mediaUri(value, "image");
+    if (image) {
+      return compact
+        ? `<div class="node-media-preview"><img src="${escapeHtml(image)}" alt="Visualização da imagem"></div>`
+        : `<figure class="image-result-viewer">
+            <img src="${escapeHtml(image)}" alt="Imagem processada">
+            ${
+              value?.metadata
+                ? `<figcaption>${escapeHtml(
+                    `${value.metadata.width || ""}×${value.metadata.height || ""} · ${value.metadata.format || "imagem"}`
+                  )}</figcaption>`
+                : ""
+            }
+          </figure>`;
+    }
+    const video = mediaUri(value, "video");
+    if (video) {
+      return compact
+        ? `<div class="node-media-preview video-preview"><video src="${escapeHtml(video)}" muted preload="metadata"></video><span>▶ Vídeo</span></div>`
+        : `<div class="video-result-viewer"><video src="${escapeHtml(video)}" controls preload="metadata"></video></div>`;
+    }
+    return "";
+  }
+
+  function renderRichOutput(value) {
+    const media = renderMedia(value);
+    const serialized = escapeHtml(formatOutput(value));
+    return media
+      ? `${media}<details class="raw-result"><summary>Ver dados técnicos</summary><pre class="trace-output">${serialized}</pre></details>`
+      : `<pre class="trace-output">${serialized}</pre>`;
   }
 
   function renderCatalog(query = "") {
@@ -202,6 +295,9 @@
       return `${node.config.role || "Especialista"} · ${tools} ${tools === 1 ? "tool" : "tools"}`;
     }
     if (node.type === "webhook") return node.config.webhook_id ? "Endpoint ativo" : "Salve para ativar";
+    if (node.type === "text_input") return "texto digitado no playground";
+    if (node.type === "image_input") return "imagem com pré-visualização";
+    if (node.type === "video_input") return "vídeo com player";
     if (node.type === "prompt") return "Template dinâmico";
     if (node.type === "file") return `${String(node.config.format || "auto").toUpperCase()} · ${node.config.output_field || "document_text"}`;
     if (node.type === "image") return `${node.config.operation || "inspect"} · ${node.config.output_format || "PNG"}`;
@@ -230,6 +326,10 @@
         const meta = catalogItem(node.type) || { color: "#7657ff", icon: "?", description: "" };
         const inputs = nodePorts(node, "input");
         const outputs = nodePorts(node, "output");
+        const preview = renderMedia(
+          state.nodeResults[node.id] || state.typedAssets[node.id],
+          true
+        );
         const inputHandles = inputs
           .map((port, index) => {
             const top = portOffset(inputs, index);
@@ -262,6 +362,7 @@
               </span>
               <button class="node-menu" tabindex="-1">•••</button>
             </div>
+            ${preview}
             <div class="node-status"><span class="status-dot"></span>${escapeHtml(meta.category || "Nó")}</div>
           </article>`;
       })
@@ -285,6 +386,14 @@
       $(".node-menu", element).addEventListener("click", (event) => {
         event.stopPropagation();
         selectNode(element.dataset.nodeId);
+      });
+      $(".node-media-preview", element)?.addEventListener("click", (event) => {
+        event.stopPropagation();
+        const result = state.nodeResults[element.dataset.nodeId] || state.typedAssets[element.dataset.nodeId];
+        openDrawer();
+        dom.resultPlaceholder.classList.add("hidden");
+        dom.runTrace.classList.remove("hidden");
+        dom.runTrace.innerHTML = renderRichOutput(result);
       });
       $$(".handle", element).forEach((handle) => {
         handle.addEventListener("pointerdown", (event) => {
@@ -541,7 +650,14 @@
           edge.target === targetId &&
           (edge.target_handle || "input") === requested?.id
       );
+      const dataCompatible =
+        !sourcePort?.data_type ||
+        !requested?.data_type ||
+        sourcePort.data_type === "any" ||
+        requested.data_type === "any" ||
+        sourcePort.data_type === requested.data_type;
       return requested?.kind === sourcePort?.kind &&
+        dataCompatible &&
         (requested.multiple || !occupied)
         ? requested.id
         : null;
@@ -549,6 +665,13 @@
     return (
       targets.find((port) => {
         if (port.kind !== sourcePort?.kind) return false;
+        if (
+          sourcePort?.data_type &&
+          port.data_type &&
+          sourcePort.data_type !== "any" &&
+          port.data_type !== "any" &&
+          sourcePort.data_type !== port.data_type
+        ) return false;
         return (
           port.multiple ||
           !state.workflow.edges.some(
@@ -655,9 +778,23 @@
       id: uid(type),
       type,
       name: meta.name,
-      position: point || { x: 120 + (count % 3) * 250, y: 120 + Math.floor(count / 3) * 150 },
+      position: point || { x: 120 + (count % 3) * 250, y: 120 + Math.floor(count / 3) * 210 },
       config: JSON.parse(JSON.stringify(meta.defaults || {})),
     };
+    const typedInputBases = {
+      text_input: "text",
+      image_input: "image",
+      video_input: "video",
+    };
+    if (typedInputBases[type]) {
+      const siblingCount = state.workflow.nodes.filter(
+        (item) => item.type === type
+      ).length;
+      node.config.input_key =
+        siblingCount === 0
+          ? typedInputBases[type]
+          : `${typedInputBases[type]}_${siblingCount + 1}`;
+    }
     state.workflow.nodes.push(node);
     markDirty();
     selectNode(node.id);
@@ -689,8 +826,7 @@
         <label for="field-node-name">Nome do nó</label>
         <input id="field-node-name" data-node-name value="${escapeHtml(node.name)}">
       </div>`;
-    const configFields = (meta.fields || [])
-      .map((field) => {
+    const renderConfigField = (field) => {
         const value = node.config[field.key] ?? "";
         let control;
         if (field.type === "provider_select") {
@@ -756,11 +892,28 @@
             ? '<small class="field-help">Use {{campo}} para inserir dados do fluxo.</small>'
             : ""
         }</div>`;
-      })
+      };
+    const regularFields = (meta.fields || [])
+      .filter((field) => !field.advanced)
+      .map(renderConfigField)
       .join("");
+    const advancedFields = (meta.fields || [])
+      .filter((field) => field.advanced)
+      .map(renderConfigField)
+      .join("");
+    const configFields =
+      regularFields +
+      (advancedFields
+        ? `<details class="advanced-settings">
+            <summary>Configurações avançadas</summary>
+            <div class="advanced-settings-body">${advancedFields}</div>
+          </details>`
+        : "");
     const note =
       node.type === "llm" || node.type === "agent"
         ? '<div class="provider-note">Escolha um provedor cadastrado visualmente. O modelo em branco usa o padrão definido no provedor.</div>'
+        : ["text_input", "image_input", "video_input"].includes(node.type)
+        ? '<div class="provider-note">O controle correto será criado automaticamente no playground ao executar o workflow.</div>'
         : node.type === "vector_database"
         ? '<div class="provider-note"><strong id="vector-database-status">Consultando a base…</strong><br>Esta instância possui armazenamento próprio. Conteúdo repetido é deduplicado automaticamente.</div>'
         : node.type === "rag"
@@ -856,7 +1009,7 @@
     nodes.forEach((node) => {
       const level = levels[node.id] || 0;
       const row = rows[level] || 0;
-      node.position = { x: 80 + level * 280, y: 140 + row * 150 };
+      node.position = { x: 80 + level * 280, y: 140 + row * 220 };
       rows[level] = row + 1;
     });
     markDirty();
@@ -871,7 +1024,15 @@
     const minX = Math.min(...xs);
     const maxX = Math.max(...xs) + 218;
     const minY = Math.min(...ys);
-    const maxY = Math.max(...ys) + 100;
+    const maxY = Math.max(
+      ...state.workflow.nodes.map(
+        (node) =>
+          node.position.y +
+          (renderMedia(state.nodeResults[node.id] || state.typedAssets[node.id], true)
+            ? 190
+            : 105)
+      )
+    );
     const width = dom.canvas.clientWidth;
     const height = dom.canvas.clientHeight;
     state.zoom = Math.min(1.15, Math.max(0.45, Math.min((width - 100) / (maxX - minX), (height - 100) / (maxY - minY))));
@@ -920,9 +1081,75 @@
     if (showToast) toast("Workflow salvo.");
   }
 
+  function typedInputNodes() {
+    return state.workflow.nodes.filter((node) =>
+      ["text_input", "image_input", "video_input"].includes(node.type)
+    );
+  }
+
+  function renderRunInputs() {
+    const container = $("#typed-run-inputs");
+    const inputs = typedInputNodes();
+    $("#advanced-run-input").open = inputs.length === 0;
+    container.innerHTML = inputs.length
+      ? inputs
+          .map((node) => {
+            const value = state.typedAssets[node.id];
+            if (node.type === "text_input") {
+              return `<div class="typed-input-card text">
+                <div class="typed-input-head"><span>TXT</span><strong>${escapeHtml(node.name)}</strong></div>
+                <textarea data-typed-text="${node.id}" placeholder="${escapeHtml(
+                  node.config.placeholder || "Digite ou cole o texto..."
+                )}">${escapeHtml(typeof value === "string" ? value : "")}</textarea>
+              </div>`;
+            }
+            const isVideo = node.type === "video_input";
+            const preview = value
+              ? renderMedia(value)
+              : `<div class="typed-drop-placeholder"><span>${isVideo ? "▶" : "◇"}</span><strong>Selecionar ${isVideo ? "vídeo" : "imagem"}</strong><small>clique ou arraste o arquivo aqui</small></div>`;
+            return `<label class="typed-input-card media ${value ? "has-media" : ""}" data-typed-drop="${node.id}">
+              <div class="typed-input-head"><span>${isVideo ? "VID" : "IMG"}</span><strong>${escapeHtml(node.name)}</strong></div>
+              ${preview}
+              <input class="hidden" type="file" data-typed-file="${node.id}" accept="${isVideo ? "video/*" : "image/*"}">
+            </label>`;
+          })
+          .join("")
+      : '<div class="typed-input-empty">Este workflow usa a entrada JSON avançada.</div>';
+  }
+
+  function attachTypedFile(nodeId, file) {
+    const node = state.workflow.nodes.find((item) => item.id === nodeId);
+    if (!node || !file) return;
+    const expected = node.type === "video_input" ? "video/" : "image/";
+    if (!file.type.startsWith(expected)) {
+      toast(`Selecione um arquivo de ${expected === "video/" ? "vídeo" : "imagem"}.`, "error");
+      return;
+    }
+    if (file.size > 25 * 1024 * 1024) {
+      toast("O arquivo excede o limite de 25 MB.", "error");
+      return;
+    }
+    const reader = new FileReader();
+    reader.addEventListener("load", () => {
+      state.typedAssets[nodeId] = {
+        name: file.name,
+        mime_type: file.type,
+        data: reader.result,
+      };
+      renderRunInputs();
+      renderNodes();
+      toast(`${file.name} pronto para executar.`);
+    });
+    reader.readAsDataURL(file);
+  }
+
   function openDrawer() {
+    renderRunInputs();
     dom.drawer.classList.add("open");
-    setTimeout(() => dom.runInput.focus(), 120);
+    setTimeout(() => {
+      const textInput = $("[data-typed-text]", $("#typed-run-inputs"));
+      (textInput || dom.runInput).focus();
+    }, 120);
   }
 
   function setRunStatus(label, type) {
@@ -943,6 +1170,19 @@
       toast("Corrija o JSON de entrada.", "error");
       return;
     }
+    typedInputNodes().forEach((node) => {
+      const key = node.config.input_key ||
+        (node.type === "text_input"
+          ? "text"
+          : node.type === "image_input"
+          ? "image"
+          : "video");
+      const value =
+        node.type === "text_input"
+          ? $(`[data-typed-text="${node.id}"]`, $("#typed-run-inputs"))?.value
+          : state.typedAssets[node.id];
+      if (value != null && value !== "") input[key] = value;
+    });
     $("#confirm-run").disabled = true;
     setRunStatus("Executando", "running");
     dom.resultPlaceholder.classList.add("hidden");
@@ -964,24 +1204,27 @@
       });
       clearNodeStatuses();
       result.events.forEach((event) => {
+        state.nodeResults[event.node_id] = event.output;
         $(`[data-node-id="${event.node_id}"]`, dom.nodes)?.classList.add(event.status);
       });
       setRunStatus(result.status === "success" ? "Concluído" : "Falhou", result.status);
       const output = result.status === "success" ? result.output : result.error;
       dom.runTrace.innerHTML = `
-        <pre class="trace-output">${escapeHtml(
-          formatOutput(output)
-        )}</pre>
+        ${renderRichOutput(output)}
         ${result.events
           .map(
             (event) => `
-              <div class="trace-event ${event.status}">
+              <button class="trace-event ${event.status}" type="button" data-view-node-result="${event.node_id}">
                 <span class="trace-event-dot"></span>
                 <strong>${escapeHtml(event.node_name)}</strong>
                 <span>${event.duration_ms} ms</span>
-              </div>`
+              </button>`
           )
           .join("")}`;
+      renderNodes();
+      result.events.forEach((event) => {
+        $(`[data-node-id="${event.node_id}"]`, dom.nodes)?.classList.add(event.status);
+      });
       toast(result.status === "success" ? "Execução concluída." : result.error, result.status);
     } catch (error) {
       clearNodeStatuses();
@@ -1128,6 +1371,51 @@
         $("#validation-label").textContent = "JSON inválido";
         $("#validation-label").classList.add("invalid");
       }
+    });
+    $("#typed-run-inputs").addEventListener("input", (event) => {
+      const nodeId = event.target.dataset.typedText;
+      if (nodeId) state.typedAssets[nodeId] = event.target.value;
+    });
+    $("#typed-run-inputs").addEventListener("change", (event) => {
+      const nodeId = event.target.dataset.typedFile;
+      if (nodeId) attachTypedFile(nodeId, event.target.files?.[0]);
+    });
+    $("#typed-run-inputs").addEventListener("dragover", (event) => {
+      const drop = event.target.closest("[data-typed-drop]");
+      if (!drop) return;
+      event.preventDefault();
+      drop.classList.add("drag-over");
+    });
+    $("#typed-run-inputs").addEventListener("dragleave", (event) => {
+      event.target.closest("[data-typed-drop]")?.classList.remove("drag-over");
+    });
+    $("#typed-run-inputs").addEventListener("drop", (event) => {
+      const drop = event.target.closest("[data-typed-drop]");
+      if (!drop) return;
+      event.preventDefault();
+      drop.classList.remove("drag-over");
+      attachTypedFile(drop.dataset.typedDrop, event.dataTransfer.files?.[0]);
+    });
+    dom.runTrace.addEventListener("click", (event) => {
+      const frame = event.target.closest("[data-frame-src]");
+      if (frame) {
+        const gallery = frame.closest(".media-gallery");
+        gallery.querySelector(".media-gallery-main img").src = frame.dataset.frameSrc;
+        gallery.querySelector(".media-gallery-main span").textContent = frame.dataset.frameLabel;
+        $$("[data-frame-src]", gallery).forEach((item) =>
+          item.classList.toggle("active", item === frame)
+        );
+        return;
+      }
+      const trace = event.target.closest("[data-view-node-result]");
+      if (!trace) return;
+      const value = state.nodeResults[trace.dataset.viewNodeResult];
+      const existing = $(".trace-node-detail", dom.runTrace);
+      existing?.remove();
+      trace.insertAdjacentHTML(
+        "beforebegin",
+        `<div class="trace-node-detail">${renderRichOutput(value)}</div>`
+      );
     });
     $("#asset-file").addEventListener("change", (event) => {
       const file = event.target.files?.[0];

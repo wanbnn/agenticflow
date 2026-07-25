@@ -53,6 +53,75 @@ def test_image_node_resizes_and_returns_reusable_data_uri():
     assert result["metadata"]["original_width"] == 80
 
 
+def test_typed_image_input_flows_without_manual_field_mapping():
+    source = io.BytesIO()
+    Image.new("RGB", (64, 32), "#7657ff").save(source, format="PNG")
+    workflow = Workflow(
+        name="Imagem tipada",
+        nodes=[
+            Node(
+                id="input",
+                type="image_input",
+                name="Escolher imagem",
+                config={"input_key": "image"},
+            ),
+            Node(
+                id="process",
+                type="image",
+                name="Processar",
+                config={
+                    "operation": "resize",
+                    "width": 16,
+                    "height": 16,
+                    "output_format": "PNG",
+                },
+            ),
+            Node(id="output", type="output", name="Visualizar", config={}),
+        ],
+        edges=[
+            Edge(source="input", target="process"),
+            Edge(source="process", target="output"),
+        ],
+    )
+    result = WorkflowEngine().run(
+        workflow,
+        RunRequest(
+            input={
+                "image": {
+                    "name": "source.png",
+                    "mime_type": "image/png",
+                    "data": data_uri(source.getvalue(), "image/png"),
+                }
+            }
+        ),
+    )
+    assert result.status == "success"
+    assert result.output["data_uri"].startswith("data:image/png;base64,")
+    assert result.output["metadata"]["width"] == 16
+    assert [event.node_id for event in result.events] == [
+        "input",
+        "process",
+        "output",
+    ]
+
+
+def test_incompatible_typed_media_connections_are_rejected():
+    workflow = Workflow(
+        name="Tipos incompatíveis",
+        nodes=[
+            Node(id="image", type="image_input", name="Imagem"),
+            Node(id="frames", type="video_frames", name="Frames"),
+        ],
+        edges=[Edge(source="image", target="frames")],
+    )
+    try:
+        validate_workflow(workflow)
+    except ValueError as exc:
+        assert "espera video" in str(exc)
+    else:
+        raise AssertionError("Imagem não deveria conectar em uma entrada de vídeo")
+
+
 def test_pdf_document_reader_reports_pages():
     source = io.BytesIO()
     writer = PdfWriter()

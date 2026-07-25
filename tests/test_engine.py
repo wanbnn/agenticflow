@@ -41,6 +41,36 @@ def test_template_supports_nested_values():
     assert render_template("Oi {{ person.name }}", {"person": {"name": "Ada"}}) == "Oi Ada"
 
 
+def test_typed_text_input_feeds_agent_without_field_configuration():
+    workflow = Workflow(
+        name="Texto fácil",
+        nodes=[
+            Node(
+                id="text",
+                type="text_input",
+                name="Pergunta",
+                config={"input_key": "text"},
+            ),
+            Node(
+                id="agent",
+                type="agent",
+                name="Assistente",
+                config={"role": "Assistente", "provider_id": "mock"},
+            ),
+            Node(id="output", type="output", name="Resposta", config={}),
+        ],
+        edges=[
+            Edge(source="text", target="agent"),
+            Edge(source="agent", target="output"),
+        ],
+    )
+    result = WorkflowEngine().run(
+        workflow, RunRequest(input={"text": "Explique este recurso"})
+    )
+    assert result.status == "success"
+    assert "Explique este recurso" in result.output
+
+
 def test_langgraph_executes_visual_workflow():
     result = WorkflowEngine().run(
         make_workflow(),

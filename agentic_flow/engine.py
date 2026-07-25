@@ -103,6 +103,18 @@ def validate_workflow(workflow: Workflow) -> None:
                 f"As alças de “{nodes_by_id[edge.source].name}” e "
                 f"“{nodes_by_id[edge.target].name}” são incompatíveis."
             )
+        source_data_type = source_port.get("data_type", "any")
+        target_data_type = target_port.get("data_type", "any")
+        if (
+            source_port.get("kind", "flow") == "flow"
+            and source_data_type != "any"
+            and target_data_type != "any"
+            and source_data_type != target_data_type
+        ):
+            raise WorkflowValidationError(
+                f"“{nodes_by_id[edge.source].name}” entrega {source_data_type}, "
+                f"mas “{nodes_by_id[edge.target].name}” espera {target_data_type}."
+            )
     incoming_ports: dict[tuple[str, str], int] = defaultdict(int)
     for edge in workflow.edges:
         key = (edge.target, edge.target_handle)
@@ -166,6 +178,31 @@ class WorkflowEngine:
         self.vector_store = vector_store
         self.mcp_runtime = mcp_runtime or MCPRuntime()
 
+    @staticmethod
+    def _incoming_result(node: Node, state: FlowState) -> tuple[Any, bool]:
+        results = state.get("results", {})
+        for node_id in reversed(node.config.get("_incoming_node_ids", [])):
+            if node_id in results:
+                return results[node_id], True
+        return None, False
+
+    @classmethod
+    def _node_input(
+        cls,
+        node: Node,
+        state: FlowState,
+        data: dict[str, Any],
+        field: str,
+    ) -> tuple[Any, bool]:
+        incoming, connected = cls._incoming_result(node, state)
+        if connected and isinstance(incoming, dict):
+            nested = lookup(incoming, field, None)
+            if nested is not None:
+                return nested, True
+        if connected:
+            return incoming, True
+        return lookup(data, field, None), False
+
     def _search_vector_database(
         self,
         *,
@@ -220,6 +257,29 @@ class WorkflowEngine:
         try:
             if node.type == "input":
                 result = data
+            elif node.type == "text_input":
+                input_key = str(config.get("input_key") or "text")
+                result = lookup(data, input_key, data.get("message"))
+                if result is None:
+                    raise ValueError("Informe o texto de entrada no playground.")
+                result = str(result)
+                data[input_key] = result
+                data["text"] = result
+                data["message"] = result
+            elif node.type == "image_input":
+                input_key = str(config.get("input_key") or "image")
+                result = lookup(data, input_key, None)
+                if result is None:
+                    raise ValueError("Selecione uma imagem no playground.")
+                data[input_key] = result
+                data["image"] = result
+            elif node.type == "video_input":
+                input_key = str(config.get("input_key") or "video")
+                result = lookup(data, input_key, None)
+                if result is None:
+                    raise ValueError("Selecione um vídeo no playground.")
+                data[input_key] = result
+                data["video"] = result
             elif node.type == "webhook":
                 result = data
                 data["_trigger"] = {
@@ -237,7 +297,9 @@ class WorkflowEngine:
             elif node.type == "file":
                 input_field = config.get("input_field", "file")
                 output_field = config.get("output_field", "document_text")
-                asset = lookup(data, input_field, None)
+                asset, _ = self._node_input(
+                    node, state, data, input_field
+                )
                 if asset is None:
                     raise ValueError(f"O campo de arquivo “{input_field}” não foi informado.")
                 result = read_document(asset, config)
@@ -246,7 +308,9 @@ class WorkflowEngine:
             elif node.type == "image":
                 input_field = config.get("input_field", "image")
                 output_field = config.get("output_field", "processed_image")
-                asset = lookup(data, input_field, None)
+                asset, _ = self._node_input(
+                    node, state, data, input_field
+                )
                 if asset is None:
                     raise ValueError(f"O campo de imagem “{input_field}” não foi informado.")
                 result = process_image(asset, config)
@@ -254,7 +318,9 @@ class WorkflowEngine:
             elif node.type == "video_frames":
                 input_field = config.get("input_field", "video")
                 output_field = config.get("output_field", "frames")
-                asset = lookup(data, input_field, None)
+                asset, _ = self._node_input(
+                    node, state, data, input_field
+                )
                 if asset is None:
                     raise ValueError(f"O campo de vídeo “{input_field}” não foi informado.")
                 result = extract_video_frames(asset, config)
@@ -265,7 +331,9 @@ class WorkflowEngine:
                     raise RuntimeError("O armazenamento vetorial não está configurado.")
                 input_field = config.get("input_field", "document_text")
                 output_field = config.get("output_field", "vector_database")
-                value = lookup(data, input_field, None)
+                value, _ = self._node_input(
+                    node, state, data, input_field
+                )
                 if value is None:
                     raise ValueError(
                         f"O campo de conteúdo “{input_field}” não foi informado."
@@ -393,11 +461,19 @@ class WorkflowEngine:
                 role = config.get("role", node.name)
                 input_field = config.get("input_field", "prompt")
                 output_field = config.get("output_field", "response")
+                incoming, connected = self._node_input(
+                    node, state, data, input_field
+                )
                 prompt = str(
-                    lookup(
+                    incoming
+                    if connected
+                    else lookup(
                         data,
                         input_field,
-                        data.get("prompt") or data.get("response") or data.get("message") or json.dumps(data),
+                        data.get("prompt")
+                        or data.get("response")
+                        or data.get("message")
+                        or json.dumps(data),
                     )
                 )
                 vector_node_id = config.get("vector_db_node_id")
@@ -497,7 +573,15 @@ class WorkflowEngine:
                 result = current
             elif node.type == "output":
                 field = config.get("field", "response")
-                result = lookup(data, field, data)
+                incoming, connected = self._incoming_result(node, state)
+                configured = lookup(data, field, None)
+                result = (
+                    configured
+                    if configured is not None
+                    else incoming
+                    if connected
+                    else data
+                )
             else:
                 raise ValueError(f"Executor não implementado para {node.type}.")
 
@@ -590,6 +674,12 @@ class WorkflowEngine:
             node_id: node for node_id, node in nodes.items()
             if node_id not in passive_nodes
         }
+        for node in active_nodes.values():
+            node.config["_incoming_node_ids"] = [
+                edge.source
+                for edge in flow_edges
+                if edge.target == node.id and edge.source in active_nodes
+            ]
         inbound = {node_id: 0 for node_id in active_nodes}
         outgoing: dict[str, list[Any]] = defaultdict(list)
         for edge in flow_edges:

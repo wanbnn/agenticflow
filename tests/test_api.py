@@ -43,7 +43,11 @@ def test_editor_is_rendered_with_pyreact_after_login(tmp_path):
     response = client.get(f"/workflows/{workflow['id']}")
     assert "Agentic Flow" in response.text
     assert 'id="canvas"' in response.text
+    assert 'id="typed-run-inputs"' in response.text
+    assert 'id="advanced-run-input"' in response.text
     assert "/static/app.js" in response.text
+    catalog_types = {item["type"] for item in client.get("/api/catalog").json()}
+    assert {"text_input", "image_input", "video_input"}.issubset(catalog_types)
 
 
 def test_crud_and_run_sample(tmp_path):
@@ -194,6 +198,47 @@ def test_dashboard_can_create_multiple_empty_workflows(tmp_path):
     assert "/static/dashboard.js?v=" in dashboard.text
 
 
+def test_workflow_can_be_deleted_from_dashboard_with_permission(tmp_path):
+    client = TestClient(create_app(tmp_path / "delete-workflow.db"))
+    setup = bootstrap(client)
+    workflow = client.get("/api/workflows").json()[0]
+    dashboard = client.get("/dashboard")
+    assert f'data-delete-workflow="{workflow["id"]}"' in dashboard.text
+    assert 'id="delete-workflow-modal"' in dashboard.text
+
+    restricted = client.post(
+        "/api/admin/users",
+        json={
+            "name": "Leitor",
+            "email": "reader@example.com",
+            "password": "senha-reader-123",
+            "role": "user",
+        },
+    ).json()
+    assert client.put(
+        f"/api/admin/workspaces/{setup['workspace']['id']}/members",
+        json={"user_id": restricted["id"], "enabled": True},
+    ).status_code == 200
+    client.post("/api/auth/logout")
+    assert client.post(
+        "/api/auth/login",
+        json={"email": "reader@example.com", "password": "senha-reader-123"},
+    ).status_code == 200
+    restricted_dashboard = client.get("/dashboard")
+    assert "data-delete-workflow" not in restricted_dashboard.text
+    assert client.delete(f"/api/workflows/{workflow['id']}").status_code == 403
+
+    client.post("/api/auth/logout")
+    assert client.post(
+        "/api/auth/login",
+        json={"email": "admin@example.com", "password": "senha-segura-123"},
+    ).status_code == 200
+    deleted = client.delete(f"/api/workflows/{workflow['id']}")
+    assert deleted.status_code == 204
+    assert client.get(f"/api/workflows/{workflow['id']}").status_code == 404
+    assert client.delete(f"/api/workflows/{workflow['id']}").status_code == 404
+
+
 def test_workflow_template_library_creates_ready_to_edit_workflow(tmp_path):
     client = TestClient(create_app(tmp_path / "test.db"))
     bootstrap(client)
@@ -204,6 +249,8 @@ def test_workflow_template_library_creates_ready_to_edit_workflow(tmp_path):
     assert {"file", "agent", "output"}.issubset(
         by_id["document-summary"]["node_types"]
     )
+    assert "image_input" in by_id["image-optimizer"]["node_types"]
+    assert "video_input" in by_id["video-to-frames"]["node_types"]
 
     created = client.post(
         "/api/templates/document-summary/instantiate",

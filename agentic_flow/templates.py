@@ -114,7 +114,7 @@ WORKFLOW_TEMPLATES: list[dict[str, Any]] = [
             "Otimização de imagem",
             "Padroniza imagens para publicação e integrações.",
             [
-                _node("input", "input", "Receber imagem", 140, 230, {"field": "image"}),
+                _node("input", "image_input", "Receber imagem", 140, 230, {"input_key": "image"}),
                 _node(
                     "image",
                     "image",
@@ -155,7 +155,7 @@ WORKFLOW_TEMPLATES: list[dict[str, Any]] = [
             "Vídeo para frames",
             "Extrai frames de um vídeo em intervalos configuráveis.",
             [
-                _node("input", "input", "Receber vídeo", 140, 230, {"field": "video"}),
+                _node("input", "video_input", "Receber vídeo", 140, 230, {"input_key": "video"}),
                 _node(
                     "video",
                     "video_frames",
@@ -229,7 +229,17 @@ WORKFLOW_TEMPLATES: list[dict[str, Any]] = [
             "Pesquisa com revisão",
             "Pipeline multiagente para respostas pesquisadas e revisadas.",
             [
-                _node("input", "input", "Nova pesquisa", 80, 220, {"field": "message"}),
+                _node(
+                    "input",
+                    "text_input",
+                    "Nova pesquisa",
+                    80,
+                    220,
+                    {
+                        "input_key": "text",
+                        "placeholder": "Qual tema devemos pesquisar?",
+                    },
+                ),
                 _node(
                     "prompt",
                     "prompt",
