@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 import secrets
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 from urllib.parse import quote_plus
 
 import uvicorn
@@ -18,7 +18,13 @@ from .engine import WorkflowEngine, validate_workflow
 from .models import Edge, Node, Position, RunRequest, Workflow, WorkflowCreate
 from .providers import PROVIDER_TYPES, PROVIDER_TYPE_MAP, ProviderRuntime
 from .store import Store
-from .ui import render_auth_page, render_dashboard, render_page, render_providers_page
+from .ui import (
+    render_access_page,
+    render_auth_page,
+    render_dashboard,
+    render_page,
+    render_providers_page,
+)
 
 
 PACKAGE_DIR = Path(__file__).resolve().parent
@@ -59,6 +65,46 @@ class ProviderPayload(BaseModel):
         if value not in PROVIDER_TYPE_MAP:
             raise ValueError("Tipo de provedor desconhecido.")
         return value
+
+
+class UserCreatePayload(BaseModel):
+    name: str = Field(min_length=2, max_length=120)
+    email: str = Field(min_length=5, max_length=255)
+    password: str = Field(min_length=8, max_length=128)
+    role: Literal["admin", "manager", "user"] = "user"
+
+
+class UserUpdatePayload(BaseModel):
+    name: str = Field(min_length=2, max_length=120)
+    role: Literal["admin", "manager", "user"]
+    active: bool = True
+
+
+class WorkspacePayload(BaseModel):
+    name: str = Field(min_length=2, max_length=120)
+
+
+class WorkspaceMembershipPayload(BaseModel):
+    user_id: str
+    enabled: bool = True
+
+
+class TeamPolicyPayload(BaseModel):
+    create_workflows: bool = False
+    edit_workflows: bool = False
+    run_workflows: bool = True
+    manage_providers: bool = False
+    allowed_node_types: list[str] | None = None
+
+
+class TeamPayload(BaseModel):
+    name: str = Field(min_length=2, max_length=120)
+    description: str = Field(default="", max_length=500)
+    policy: TeamPolicyPayload = Field(default_factory=TeamPolicyPayload)
+
+
+class TeamMembersPayload(BaseModel):
+    user_ids: list[str] = Field(default_factory=list)
 
 
 def sample_workflow() -> WorkflowCreate:
@@ -154,14 +200,57 @@ def create_app(database: str | Path | None = None) -> FastAPI:
     )
     app.mount("/static", StaticFiles(directory=PACKAGE_DIR / "static"), name="static")
 
-    def auth_context(request: Request) -> tuple[dict[str, Any], dict[str, str]]:
+    def auth_context(request: Request) -> tuple[dict[str, Any], dict[str, Any]]:
         user_id = request.session.get("user_id")
         user = store.get_user(user_id) if user_id else None
-        workspace = store.get_user_workspace(user_id) if user else None
+        workspace = (
+            store.get_accessible_workspace(
+                user_id, request.session.get("workspace_id")
+            )
+            if user
+            else None
+        )
+        if user and not workspace:
+            workspace = store.get_accessible_workspace(user_id)
         if not user or not workspace:
             request.session.clear()
             raise HTTPException(401, "Autenticação necessária.")
+        request.session["workspace_id"] = workspace["id"]
         return user, workspace
+
+    def permissions_for(user: dict[str, Any], workspace: dict[str, Any]):
+        return store.effective_permissions(user["id"], workspace["id"])
+
+    def require_global_admin(
+        request: Request,
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
+        user, workspace = auth_context(request)
+        if user["role"] != "admin":
+            raise HTTPException(403, "Apenas administradores podem realizar esta ação.")
+        return user, workspace
+
+    def require_permission(
+        request: Request, permission: str
+    ) -> tuple[dict[str, Any], dict[str, Any], dict[str, object]]:
+        user, workspace = auth_context(request)
+        permissions = permissions_for(user, workspace)
+        if not permissions.get(permission):
+            raise HTTPException(403, "Seu papel ou time não permite esta ação.")
+        return user, workspace, permissions
+
+    def validate_node_access(
+        payload: WorkflowCreate, permissions: dict[str, object]
+    ) -> None:
+        allowed = permissions.get("allowed_node_types")
+        if allowed is None:
+            return
+        blocked = sorted({node.type for node in payload.nodes} - set(allowed))
+        if blocked:
+            raise HTTPException(
+                403,
+                "Seu time não permite os seguintes tipos de nó: "
+                + ", ".join(blocked),
+            )
 
     def provision_webhooks(
         payload: WorkflowCreate,
@@ -237,6 +326,7 @@ def create_app(database: str | Path | None = None) -> FastAPI:
         store.create_workflow(sample_workflow(), workspace["id"], user["id"])
         request.session.clear()
         request.session["user_id"] = user["id"]
+        request.session["workspace_id"] = workspace["id"]
         return {"user": user, "workspace": workspace}
 
     @app.post("/api/auth/login")
@@ -248,6 +338,13 @@ def create_app(database: str | Path | None = None) -> FastAPI:
             raise HTTPException(401, "E-mail ou senha inválidos.")
         request.session.clear()
         request.session["user_id"] = user["id"]
+        workspace = store.get_accessible_workspace(user["id"])
+        if not workspace:
+            request.session.clear()
+            raise HTTPException(
+                403, "Seu usuário ainda não foi liberado em um workspace."
+            )
+        request.session["workspace_id"] = workspace["id"]
         return {"user": user}
 
     @app.post("/api/auth/logout", status_code=204)
@@ -258,7 +355,25 @@ def create_app(database: str | Path | None = None) -> FastAPI:
     @app.get("/api/auth/me")
     def current_user(request: Request):
         user, workspace = auth_context(request)
-        return {"user": user, "workspace": workspace}
+        return {
+            "user": user,
+            "workspace": workspace,
+            "workspaces": store.list_workspaces(user["id"]),
+            "permissions": permissions_for(user, workspace),
+        }
+
+    @app.post("/api/auth/workspace/{workspace_id}")
+    def switch_workspace(workspace_id: str, request: Request):
+        user_id = request.session.get("user_id")
+        workspace = (
+            store.get_accessible_workspace(user_id, workspace_id)
+            if user_id
+            else None
+        )
+        if not workspace:
+            raise HTTPException(403, "Acesso ao workspace não autorizado.")
+        request.session["workspace_id"] = workspace_id
+        return {"workspace": workspace}
 
     @app.get("/dashboard", response_class=HTMLResponse, include_in_schema=False)
     def dashboard(request: Request):
@@ -271,6 +386,8 @@ def create_app(database: str | Path | None = None) -> FastAPI:
             store.list_workflows(workspace["id"]),
             user,
             workspace,
+            store.list_workspaces(user["id"]),
+            permissions_for(user, workspace),
         )
 
     @app.get("/workflows/{workflow_id}", response_class=HTMLResponse, include_in_schema=False)
@@ -285,21 +402,128 @@ def create_app(database: str | Path | None = None) -> FastAPI:
 
     @app.get("/api/catalog")
     def catalog(request: Request):
-        auth_context(request)
-        return NODE_CATALOG
-
-    def require_admin(request: Request) -> tuple[dict[str, Any], dict[str, str]]:
         user, workspace = auth_context(request)
-        if user["role"] != "admin":
-            raise HTTPException(403, "Apenas administradores podem gerenciar provedores.")
+        allowed = permissions_for(user, workspace).get("allowed_node_types")
+        if allowed is None:
+            return NODE_CATALOG
+        return [node for node in NODE_CATALOG if node["type"] in allowed]
+
+    def require_admin(request: Request) -> tuple[dict[str, Any], dict[str, Any]]:
+        user, workspace, _ = require_permission(request, "manage_providers")
         return user, workspace
 
     @app.get("/api/users")
     def users(request: Request):
-        user, workspace = auth_context(request)
-        if user["role"] != "admin":
-            raise HTTPException(403, "Apenas administradores podem listar usuários.")
+        user, workspace, _ = require_permission(request, "manage_teams")
         return store.list_users(workspace["id"])
+
+    @app.get("/settings/access", response_class=HTMLResponse, include_in_schema=False)
+    def access_page(request: Request):
+        try:
+            user, workspace, _ = require_permission(request, "manage_teams")
+        except HTTPException as exc:
+            if exc.status_code == 401:
+                return RedirectResponse("/login", status_code=303)
+            raise
+        return render_access_page(
+            user, workspace, store.list_workspaces(user["id"])
+        )
+
+    @app.get("/api/access/overview")
+    def access_overview(request: Request):
+        user, workspace, permissions = require_permission(request, "manage_teams")
+        return {
+            "current_user": user,
+            "workspace": workspace,
+            "workspaces": store.list_workspaces(user["id"]),
+            "users": (
+                store.list_all_users()
+                if user["role"] == "admin"
+                else store.list_users(workspace["id"])
+            ),
+            "workspace_users": store.list_users(workspace["id"]),
+            "teams": store.list_teams(workspace["id"]),
+            "node_types": [
+                {"type": item["type"], "name": item["name"]}
+                for item in NODE_CATALOG
+            ],
+            "permissions": permissions,
+        }
+
+    @app.post("/api/admin/users", status_code=201)
+    def create_user(payload: UserCreatePayload, request: Request):
+        require_global_admin(request)
+        try:
+            return store.create_user(**payload.model_dump())
+        except ValueError as exc:
+            raise HTTPException(409, str(exc)) from exc
+
+    @app.put("/api/admin/users/{user_id}")
+    def update_user(user_id: str, payload: UserUpdatePayload, request: Request):
+        current, _ = require_global_admin(request)
+        if user_id == current["id"] and (
+            payload.role != "admin" or not payload.active
+        ):
+            raise HTTPException(422, "Você não pode remover o próprio acesso administrativo.")
+        updated = store.update_user(user_id, **payload.model_dump())
+        if not updated:
+            raise HTTPException(404, "Usuário não encontrado.")
+        return updated
+
+    @app.post("/api/admin/workspaces", status_code=201)
+    def create_workspace(payload: WorkspacePayload, request: Request):
+        require_global_admin(request)
+        return store.create_workspace(payload.name)
+
+    @app.put("/api/admin/workspaces/{workspace_id}/members")
+    def set_workspace_member(
+        workspace_id: str,
+        payload: WorkspaceMembershipPayload,
+        request: Request,
+    ):
+        require_global_admin(request)
+        if not store.set_workspace_membership(
+            workspace_id, payload.user_id, payload.enabled
+        ):
+            raise HTTPException(404, "Usuário ou workspace não encontrado.")
+        return {"updated": True}
+
+    @app.post("/api/teams", status_code=201)
+    def create_team(payload: TeamPayload, request: Request):
+        user, workspace, _ = require_permission(request, "manage_teams")
+        return store.create_team(
+            workspace_id=workspace["id"],
+            created_by=user["id"],
+            **payload.model_dump(),
+        )
+
+    @app.put("/api/teams/{team_id}")
+    def update_team(team_id: str, payload: TeamPayload, request: Request):
+        _, workspace, _ = require_permission(request, "manage_teams")
+        updated = store.update_team(
+            team_id, workspace["id"], **payload.model_dump()
+        )
+        if not updated:
+            raise HTTPException(404, "Time não encontrado.")
+        return updated
+
+    @app.delete("/api/teams/{team_id}", status_code=204)
+    def delete_team(team_id: str, request: Request):
+        _, workspace, _ = require_permission(request, "manage_teams")
+        if not store.delete_team(team_id, workspace["id"]):
+            raise HTTPException(404, "Time não encontrado.")
+        return Response(status_code=204)
+
+    @app.put("/api/teams/{team_id}/members")
+    def set_team_members(
+        team_id: str, payload: TeamMembersPayload, request: Request
+    ):
+        _, workspace, _ = require_permission(request, "manage_teams")
+        if not store.set_team_members(
+            team_id, workspace["id"], payload.user_ids
+        ):
+            raise HTTPException(404, "Time não encontrado.")
+        return {"updated": True}
 
     @app.get("/settings/providers", response_class=HTMLResponse, include_in_schema=False)
     def providers_page(request: Request):
@@ -314,6 +538,7 @@ def create_app(database: str | Path | None = None) -> FastAPI:
             PROVIDER_TYPES,
             user,
             workspace,
+            store.list_workspaces(user["id"]),
         )
 
     @app.get("/api/provider-types")
@@ -415,7 +640,10 @@ def create_app(database: str | Path | None = None) -> FastAPI:
 
     @app.post("/api/workflows", status_code=201)
     def create_workflow(payload: WorkflowCreate, request: Request):
-        user, workspace = auth_context(request)
+        user, workspace, permissions = require_permission(
+            request, "create_workflows"
+        )
+        validate_node_access(payload, permissions)
         prepared = provision_webhooks(payload)
         return store.create_workflow(prepared, workspace["id"], user["id"])
 
@@ -429,7 +657,8 @@ def create_app(database: str | Path | None = None) -> FastAPI:
 
     @app.put("/api/workflows/{workflow_id}")
     def update_workflow(workflow_id: str, payload: WorkflowCreate, request: Request):
-        _, workspace = auth_context(request)
+        _, workspace, permissions = require_permission(request, "edit_workflows")
+        validate_node_access(payload, permissions)
         current = store.get_workflow(workflow_id, workspace["id"])
         if not current:
             raise HTTPException(404, "Workflow não encontrado.")
@@ -446,14 +675,14 @@ def create_app(database: str | Path | None = None) -> FastAPI:
 
     @app.delete("/api/workflows/{workflow_id}", status_code=204)
     def delete_workflow(workflow_id: str, request: Request):
-        _, workspace = auth_context(request)
+        _, workspace, _ = require_permission(request, "edit_workflows")
         if not store.delete_workflow(workflow_id, workspace["id"]):
             raise HTTPException(404, "Workflow não encontrado.")
         return Response(status_code=204)
 
     @app.post("/api/workflows/{workflow_id}/run")
     def run_workflow(workflow_id: str, payload: RunRequest, request: Request):
-        _, workspace = auth_context(request)
+        _, workspace, _ = require_permission(request, "run_workflows")
         workflow = store.get_workflow(workflow_id, workspace["id"])
         if not workflow:
             raise HTTPException(404, "Workflow não encontrado.")

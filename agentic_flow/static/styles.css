@@ -242,6 +242,8 @@ button { color: inherit; }
 .catalog-node strong { display: block; font-size: 12px; font-weight: 600; }
 .catalog-node small { display: block; max-width: 145px; margin-top: 3px; color: var(--muted-2); font-size: 9px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .catalog-node .drag-dots { color: #484752; font-weight: 700; letter-spacing: 1px; }
+.workflow-readonly .catalog-node { cursor: not-allowed; opacity: .55; }
+.workflow-readonly .flow-node { cursor: default; }
 
 .sidebar-footer {
   min-height: 52px;
@@ -576,6 +578,17 @@ button { color: inherit; }
 .dashboard-topbar .brand { border-right: 1px solid var(--line); }
 .workspace-switcher, .user-menu { display: flex; align-items: center; gap: 10px; }
 .workspace-switcher { margin-left: 20px; }
+.workspace-select {
+  min-width: 150px;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.workspace-select option { background: #17171d; color: var(--text); }
 .workspace-avatar, .user-avatar { display: grid; place-items: center; border-radius: 9px; font-weight: 700; }
 .workspace-avatar { width: 34px; height: 34px; background: rgba(118,87,255,.14); color: #a997ff; border: 1px solid #413766; }
 .user-avatar { width: 32px; height: 32px; border-radius: 50%; background: #282732; color: #d8d5e2; }
@@ -643,6 +656,59 @@ button { color: inherit; }
 .button.danger { background: rgba(251,113,133,.08); border-color: #63313a; color: #ff94a5; }
 .provider-success { border-color: #265b3a; background: rgba(74,222,128,.08); color: var(--green); }
 
+/* Access, teams and policies */
+.access-heading-actions { display: flex; gap: 8px; }
+.access-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin: -8px 0 28px; }
+.access-stats article { padding: 16px 18px; border: 1px solid var(--line); border-radius: 11px; background: var(--panel); }
+.access-stats strong { display: block; font: 700 23px "Manrope", sans-serif; }
+.access-stats span { color: var(--muted); font-size: 9px; }
+.access-section { margin-top: 32px; }
+.access-section-head { display: flex; justify-content: space-between; align-items: end; margin-bottom: 13px; }
+.access-section-head h2 { margin: 0; font: 650 16px "Manrope", sans-serif; }
+.access-section-head p { margin: 4px 0 0; color: var(--muted); font-size: 9px; }
+.access-grid, .team-grid { display: grid; grid-template-columns: repeat(3, minmax(230px, 1fr)); gap: 12px; }
+.access-card, .team-card { padding: 16px; border: 1px solid var(--line); border-radius: 12px; background: linear-gradient(145deg,#18181f,#141419); }
+.access-card { display: grid; grid-template-columns: 38px 1fr; gap: 11px; align-items: center; }
+.access-card h3, .team-card h3 { margin: 0; font: 600 13px "Manrope", sans-serif; }
+.access-card p, .team-card p { margin: 4px 0 0; color: var(--muted); font-size: 9px; line-height: 1.5; }
+.access-card .compact { grid-column: 1 / -1; width: 100%; height: 31px; justify-content: center; }
+.access-table { border: 1px solid var(--line); border-radius: 12px; overflow: hidden; background: #15151b; }
+.access-user-row { display: grid; grid-template-columns: 34px minmax(180px,1fr) 90px 70px 55px; align-items: center; gap: 10px; padding: 11px 14px; border-bottom: 1px solid var(--line-soft); }
+.access-user-row:last-child { border-bottom: 0; }
+.access-user-copy strong, .access-user-copy small { display: block; }
+.access-user-copy strong { font-size: 11px; }
+.access-user-copy small { margin-top: 3px; color: var(--muted); font-size: 8px; }
+.role-badge, .status-badge { width: fit-content; padding: 4px 8px; border-radius: 12px; background: #24232b; color: var(--muted); font-size: 8px; text-transform: capitalize; }
+.role-badge.admin { background: rgba(118,87,255,.14); color: #b9abff; }
+.role-badge.manager { background: rgba(56,189,248,.12); color: #7dd3fc; }
+.status-badge.active { background: rgba(74,222,128,.1); color: var(--green); }
+.team-card-head, .team-actions { display: flex; align-items: center; justify-content: space-between; }
+.team-icon { width: 34px; height: 34px; display: grid; place-items: center; border-radius: 9px; background: rgba(118,87,255,.13); color: var(--purple-2); }
+.team-card h3 { margin-top: 15px; }
+.team-card > p { min-height: 28px; }
+.policy-tags { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 13px; }
+.policy-tags span { padding: 4px 7px; border: 1px solid #343142; border-radius: 10px; color: #aaa5b8; font-size: 7px; }
+.team-actions { margin-top: 14px; padding-top: 10px; border-top: 1px solid var(--line-soft); }
+.danger-text { color: var(--red); }
+.access-empty { grid-column: 1 / -1; padding: 24px; border: 1px dashed var(--line); border-radius: 11px; color: var(--muted); text-align: center; font-size: 10px; }
+.access-modal { width: min(520px, 100%); max-height: calc(100vh - 30px); overflow-y: auto; }
+.policy-editor { margin-bottom: 16px; padding: 12px; border: 1px solid var(--line); border-radius: 9px; background: #111116; }
+.policy-editor > strong { display: block; margin-bottom: 10px; font-size: 10px; }
+.policy-editor .toggle-field { margin: 8px 0; }
+.member-check-list { max-height: 230px; overflow-y: auto; border: 1px solid var(--line); border-radius: 9px; }
+.member-check { display: flex; align-items: center; gap: 10px; padding: 10px; border-bottom: 1px solid var(--line-soft); cursor: pointer; }
+.member-check:last-child { border-bottom: 0; }
+.member-check input { accent-color: var(--purple); }
+.member-check span, .member-check strong, .member-check small { display: block; }
+.member-check span { flex: 1; }
+.member-check strong { font-size: 10px; }
+.member-check small { margin-top: 2px; color: var(--muted); font-size: 8px; }
+.compact-list { max-height: 160px; }
+.node-policy-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; }
+.node-policy-grid label { display: grid; grid-template-columns: 16px 1fr auto; align-items: center; gap: 6px; padding: 7px; border: 1px solid var(--line-soft); border-radius: 7px; color: #c2bfca; font-size: 9px; cursor: pointer; }
+.node-policy-grid input { accent-color: var(--purple); }
+.node-policy-grid code { color: var(--muted-2); font-size: 7px; }
+
 @media (max-width: 800px) {
   .auth-shell { grid-template-columns: 1fr; }
   .auth-visual { display: none; }
@@ -653,4 +719,7 @@ button { color: inherit; }
   .workflow-grid { grid-template-columns: 1fr; }
   .provider-grid { grid-template-columns: 1fr; }
   .dashboard-main { width: calc(100% - 32px); padding-top: 32px; }
+  .access-grid, .team-grid, .access-stats { grid-template-columns: 1fr; }
+  .access-user-row { grid-template-columns: 32px 1fr auto; }
+  .access-user-row .status-badge, .access-user-row .provider-edit { display: none; }
 }

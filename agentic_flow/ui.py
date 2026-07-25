@@ -18,6 +18,40 @@ def Brand(_props):
     )
 
 
+def WorkspaceSwitcher(props):
+    workspace = props["workspace"]
+    workspaces = props.get("workspaces", [workspace])
+    return h(
+        "div",
+        {"className": "workspace-switcher"},
+        h("span", {"className": "workspace-avatar"}, workspace["name"][:1].upper()),
+        h(
+            "div",
+            None,
+            h("small", None, "WORKSPACE"),
+            h(
+                "select",
+                {
+                    "className": "workspace-select",
+                    "id": "workspace-select",
+                    "aria-label": "Workspace ativo",
+                },
+                *[
+                    h(
+                        "option",
+                        {
+                            "value": item["id"],
+                            "selected": item["id"] == workspace["id"],
+                        },
+                        item["name"],
+                    )
+                    for item in workspaces
+                ],
+            ),
+        ),
+    )
+
+
 def IconButton(props):
     return h(
         "button",
@@ -419,6 +453,9 @@ def Dashboard(props):
     workflows = props.get("workflows", [])
     user = props["user"]
     workspace = props["workspace"]
+    workspaces = props.get("workspaces", [workspace])
+    permissions = props.get("permissions", {})
+    can_create = permissions.get("create_workflows", False)
     return h(
         "div",
         {"className": "dashboard-shell"},
@@ -426,15 +463,21 @@ def Dashboard(props):
             "header",
             {"className": "dashboard-topbar"},
             h(Brand, None),
-            h(
-                "div",
-                {"className": "workspace-switcher"},
-                h("span", {"className": "workspace-avatar"}, workspace["name"][:1].upper()),
-                h("div", None, h("small", None, "WORKSPACE"), h("strong", None, workspace["name"])),
-            ),
+            h(WorkspaceSwitcher, {"workspace": workspace, "workspaces": workspaces}),
             h(
                 "div",
                 {"className": "user-menu"},
+                *([
+                    h(
+                        "a",
+                        {
+                            "className": "icon-button settings-link",
+                            "href": "/settings/access",
+                            "title": "Usuários, times e políticas",
+                        },
+                        "♙",
+                    )
+                ] if permissions.get("manage_teams") else []),
                 *(
                     [
                         h(
@@ -447,7 +490,7 @@ def Dashboard(props):
                             "⚙",
                         )
                     ]
-                    if user.get("role") == "admin"
+                    if permissions.get("manage_providers")
                     else []
                 ),
                 h("span", {"className": "user-avatar"}, user["name"][:1].upper()),
@@ -468,11 +511,17 @@ def Dashboard(props):
                     h("h1", None, "Workflows"),
                     h("p", None, "Crie e gerencie suas equipes de agentes."),
                 ),
-                h(
-                    "button",
-                    {"className": "button primary", "id": "new-workflow-button"},
-                    h("span", None, "+"),
-                    "Novo workflow",
+                *(
+                    [
+                        h(
+                            "button",
+                            {"className": "button primary", "id": "new-workflow-button"},
+                            h("span", None, "+"),
+                            "Novo workflow",
+                        )
+                    ]
+                    if can_create
+                    else []
                 ),
             ),
             h(
@@ -503,12 +552,18 @@ def Dashboard(props):
                     )
                     for workflow in workflows
                 ],
-                h(
-                    "button",
-                    {"className": "workflow-card new-card", "id": "new-workflow-card"},
-                    h("span", {"className": "new-card-plus"}, "+"),
-                    h("strong", None, "Criar workflow"),
-                    h("small", None, "Comece com um canvas vazio"),
+                *(
+                    [
+                        h(
+                            "button",
+                            {"className": "workflow-card new-card", "id": "new-workflow-card"},
+                            h("span", {"className": "new-card-plus"}, "+"),
+                            h("strong", None, "Criar workflow"),
+                            h("small", None, "Comece com um canvas vazio"),
+                        )
+                    ]
+                    if can_create
+                    else []
                 ),
             ),
         ),
@@ -554,10 +609,23 @@ def Dashboard(props):
 
 
 def render_dashboard(
-    workflows: list, user: dict[str, object], workspace: dict[str, str]
+    workflows: list,
+    user: dict[str, object],
+    workspace: dict[str, str],
+    workspaces: list[dict] | None = None,
+    permissions: dict | None = None,
 ) -> str:
     body = render_to_static_markup(
-        h(Dashboard, {"workflows": workflows, "user": user, "workspace": workspace})
+        h(
+            Dashboard,
+            {
+                "workflows": workflows,
+                "user": user,
+                "workspace": workspace,
+                "workspaces": workspaces or [workspace],
+                "permissions": permissions or {},
+            },
+        )
     )
     return _document(body, "Workflows · Agentic Flow", ["/static/dashboard.js"])
 
@@ -567,6 +635,7 @@ def ProvidersPage(props):
     provider_types = props.get("provider_types", [])
     user = props["user"]
     workspace = props["workspace"]
+    workspaces = props.get("workspaces", [workspace])
     return h(
         "div",
         {"className": "dashboard-shell providers-shell"},
@@ -574,12 +643,7 @@ def ProvidersPage(props):
             "header",
             {"className": "dashboard-topbar"},
             h(Brand, None),
-            h(
-                "div",
-                {"className": "workspace-switcher"},
-                h("span", {"className": "workspace-avatar"}, workspace["name"][:1].upper()),
-                h("div", None, h("small", None, "WORKSPACE"), h("strong", None, workspace["name"])),
-            ),
+            h(WorkspaceSwitcher, {"workspace": workspace, "workspaces": workspaces}),
             h(
                 "div",
                 {"className": "user-menu"},
@@ -763,6 +827,7 @@ def render_providers_page(
     provider_types: list[dict],
     user: dict[str, object],
     workspace: dict[str, str],
+    workspaces: list[dict] | None = None,
 ) -> str:
     body = render_to_static_markup(
         h(
@@ -772,6 +837,7 @@ def render_providers_page(
                 "provider_types": provider_types,
                 "user": user,
                 "workspace": workspace,
+                "workspaces": workspaces or [workspace],
             },
         )
     )
@@ -779,4 +845,155 @@ def render_providers_page(
         body,
         "Provedores de IA · Agentic Flow",
         ["/static/providers.js"],
+    )
+
+
+def AccessPage(props):
+    user = props["user"]
+    workspace = props["workspace"]
+    workspaces = props.get("workspaces", [workspace])
+    is_admin = user.get("role") == "admin"
+    return h(
+        "div",
+        {
+            "className": "dashboard-shell access-shell",
+            "data-current-role": user.get("role", "user"),
+        },
+        h(
+            "header",
+            {"className": "dashboard-topbar"},
+            h(Brand, None),
+            h(WorkspaceSwitcher, {"workspace": workspace, "workspaces": workspaces}),
+            h(
+                "div",
+                {"className": "user-menu"},
+                h("a", {"className": "button secondary", "href": "/dashboard"}, "← Workflows"),
+                h("span", {"className": "user-avatar"}, user["name"][:1].upper()),
+                h("div", None, h("strong", None, user["name"]), h("small", None, user["role"])),
+            ),
+        ),
+        h(
+            "main",
+            {"className": "dashboard-main access-main"},
+            h(
+                "section",
+                {"className": "dashboard-heading"},
+                h(
+                    "div",
+                    None,
+                    h("span", {"className": "auth-kicker"}, "ACESSO E GOVERNANÇA"),
+                    h("h1", None, "Usuários, times e políticas"),
+                    h(
+                        "p",
+                        None,
+                        "Controle quem acessa cada workspace e o que cada time pode fazer.",
+                    ),
+                ),
+                h(
+                    "div",
+                    {"className": "access-heading-actions"},
+                    *(
+                        [
+                            h(
+                                "button",
+                                {"className": "button secondary", "id": "new-workspace-button"},
+                                "+ Workspace",
+                            ),
+                            h(
+                                "button",
+                                {"className": "button primary", "id": "new-user-button"},
+                                "+ Usuário",
+                            ),
+                        ]
+                        if is_admin
+                        else []
+                    ),
+                    h(
+                        "button",
+                        {"className": "button primary", "id": "new-team-button"},
+                        "+ Time",
+                    ),
+                ),
+            ),
+            h(
+                "section",
+                {"className": "access-stats", "id": "access-stats"},
+                h("article", None, h("strong", None, "—"), h("span", None, "Usuários")),
+                h("article", None, h("strong", None, "—"), h("span", None, "Times")),
+                h("article", None, h("strong", None, "—"), h("span", None, "Workspaces")),
+            ),
+            *(
+                [
+                    h(
+                        "section",
+                        {"className": "access-section"},
+                        h(
+                            "div",
+                            {"className": "access-section-head"},
+                            h("div", None, h("h2", None, "Workspaces"), h("p", None, "Libere usuários em um ou mais ambientes.")),
+                        ),
+                        h("div", {"className": "access-grid", "id": "workspace-admin-grid"}),
+                    )
+                ]
+                if is_admin
+                else []
+            ),
+            h(
+                "section",
+                {"className": "access-section"},
+                h(
+                    "div",
+                    {"className": "access-section-head"},
+                    h("div", None, h("h2", None, "Usuários do workspace"), h("p", None, "Papéis globais e vínculos aprovados.")),
+                ),
+                h("div", {"className": "access-table", "id": "access-users"}),
+            ),
+            h(
+                "section",
+                {"className": "access-section"},
+                h(
+                    "div",
+                    {"className": "access-section-head"},
+                    h("div", None, h("h2", None, "Times e políticas"), h("p", None, "Permissões são combinadas entre os times do usuário.")),
+                ),
+                h("div", {"className": "team-grid", "id": "team-grid"}),
+            ),
+        ),
+        h(
+            "div",
+            {"className": "modal-backdrop hidden", "id": "access-modal"},
+            h(
+                "form",
+                {"className": "workflow-modal access-modal", "id": "access-form"},
+                h("button", {"type": "button", "className": "modal-close", "id": "access-modal-close"}, "×"),
+                h("span", {"className": "auth-kicker", "id": "access-modal-kicker"}, "ACESSO"),
+                h("h2", {"id": "access-modal-title"}, "Configurar"),
+                h("div", {"id": "access-modal-body"}),
+                h("div", {"className": "auth-error hidden", "id": "access-error"}),
+                h("button", {"className": "button primary auth-submit", "type": "submit"}, "Salvar"),
+            ),
+        ),
+        h("div", {"className": "toast-region", "id": "toast-region"}),
+    )
+
+
+def render_access_page(
+    user: dict[str, object],
+    workspace: dict[str, str],
+    workspaces: list[dict],
+) -> str:
+    body = render_to_static_markup(
+        h(
+            AccessPage,
+            {
+                "user": user,
+                "workspace": workspace,
+                "workspaces": workspaces,
+            },
+        )
+    )
+    return _document(
+        body,
+        "Acesso e políticas · Agentic Flow",
+        ["/static/access.js"],
     )

@@ -251,3 +251,187 @@ def test_ollama_provider_does_not_require_api_key(tmp_path):
     )
     assert response.status_code == 201
     assert response.json()["has_api_key"] is False
+
+
+def test_admin_manages_users_and_multiple_workspaces(tmp_path):
+    client = TestClient(create_app(tmp_path / "test.db"))
+    setup = bootstrap(client)
+    first_workspace = setup["workspace"]["id"]
+
+    manager = client.post(
+        "/api/admin/users",
+        json={
+            "name": "Gestora",
+            "email": "manager@example.com",
+            "password": "senha-manager-123",
+            "role": "manager",
+        },
+    )
+    assert manager.status_code == 201
+    member = client.post(
+        "/api/admin/users",
+        json={
+            "name": "Pessoa usuária",
+            "email": "user@example.com",
+            "password": "senha-user-123",
+            "role": "user",
+        },
+    )
+    assert member.status_code == 201
+    without_access = client.post(
+        "/api/admin/users",
+        json={
+            "name": "Sem acesso",
+            "email": "waiting@example.com",
+            "password": "senha-waiting-123",
+            "role": "user",
+        },
+    )
+    assert without_access.status_code == 201
+
+    second_workspace = client.post(
+        "/api/admin/workspaces", json={"name": "Operação Sul"}
+    )
+    assert second_workspace.status_code == 201
+    second_workspace_id = second_workspace.json()["id"]
+
+    for workspace_id, user_id in [
+        (first_workspace, manager.json()["id"]),
+        (second_workspace_id, manager.json()["id"]),
+        (second_workspace_id, member.json()["id"]),
+    ]:
+        response = client.put(
+            f"/api/admin/workspaces/{workspace_id}/members",
+            json={"user_id": user_id, "enabled": True},
+        )
+        assert response.status_code == 200
+
+    context = client.get("/api/auth/me").json()
+    assert {item["id"] for item in context["workspaces"]} == {
+        first_workspace,
+        second_workspace_id,
+    }
+    assert client.post(
+        f"/api/auth/workspace/{second_workspace_id}"
+    ).status_code == 200
+    assert client.get("/api/auth/me").json()["workspace"]["id"] == second_workspace_id
+    assert "Usuários, times e políticas" in client.get("/settings/access").text
+
+    client.post("/api/auth/logout")
+    denied = client.post(
+        "/api/auth/login",
+        json={"email": "waiting@example.com", "password": "senha-waiting-123"},
+    )
+    assert denied.status_code == 403
+
+
+def test_manager_creates_team_and_team_policy_controls_user(tmp_path):
+    client = TestClient(create_app(tmp_path / "test.db"))
+    setup = bootstrap(client)
+    workspace_id = setup["workspace"]["id"]
+    manager = client.post(
+        "/api/admin/users",
+        json={
+            "name": "Manager",
+            "email": "manager@example.com",
+            "password": "senha-manager-123",
+            "role": "manager",
+        },
+    ).json()
+    user = client.post(
+        "/api/admin/users",
+        json={
+            "name": "User",
+            "email": "user@example.com",
+            "password": "senha-user-123",
+            "role": "user",
+        },
+    ).json()
+    for user_id in (manager["id"], user["id"]):
+        assert client.put(
+            f"/api/admin/workspaces/{workspace_id}/members",
+            json={"user_id": user_id, "enabled": True},
+        ).status_code == 200
+
+    client.post("/api/auth/logout")
+    assert client.post(
+        "/api/auth/login",
+        json={"email": "manager@example.com", "password": "senha-manager-123"},
+    ).status_code == 200
+    assert client.post(
+        "/api/admin/workspaces", json={"name": "Não permitido"}
+    ).status_code == 403
+
+    team = client.post(
+        "/api/teams",
+        json={
+            "name": "Criadores básicos",
+            "description": "Pode montar fluxos simples.",
+            "policy": {
+                "create_workflows": True,
+                "edit_workflows": True,
+                "run_workflows": False,
+                "manage_providers": False,
+                "allowed_node_types": ["input", "output"],
+            },
+        },
+    )
+    assert team.status_code == 201
+    assert client.put(
+        f"/api/teams/{team.json()['id']}/members",
+        json={"user_ids": [user["id"]]},
+    ).status_code == 200
+
+    client.post("/api/auth/logout")
+    assert client.post(
+        "/api/auth/login",
+        json={"email": "user@example.com", "password": "senha-user-123"},
+    ).status_code == 200
+    me = client.get("/api/auth/me").json()
+    assert me["permissions"]["create_workflows"] is True
+    assert me["permissions"]["run_workflows"] is False
+    assert me["permissions"]["allowed_node_types"] == ["input", "output"]
+    assert {item["type"] for item in client.get("/api/catalog").json()} == {
+        "input",
+        "output",
+    }
+
+    allowed = client.post(
+        "/api/workflows",
+        json={
+            "name": "Fluxo permitido",
+            "nodes": [
+                {
+                    "id": "in",
+                    "type": "input",
+                    "name": "Entrada",
+                    "position": {"x": 0, "y": 0},
+                    "config": {"field": "message"},
+                }
+            ],
+            "edges": [],
+        },
+    )
+    assert allowed.status_code == 201
+    blocked = client.post(
+        "/api/workflows",
+        json={
+            "name": "Fluxo bloqueado",
+            "nodes": [
+                {
+                    "id": "agent",
+                    "type": "agent",
+                    "name": "Agente",
+                    "position": {"x": 0, "y": 0},
+                    "config": {},
+                }
+            ],
+            "edges": [],
+        },
+    )
+    assert blocked.status_code == 403
+    assert client.post(
+        f"/api/workflows/{allowed.json()['id']}/run",
+        json={"input": {"message": "teste"}},
+    ).status_code == 403
+    assert client.get("/api/access/overview").status_code == 403

@@ -5,7 +5,17 @@ from pathlib import Path
 from uuid import uuid4
 
 import bcrypt
-from sqlalchemy import Boolean, ForeignKey, Integer, String, Text, create_engine, event, select
+from sqlalchemy import (
+    Boolean,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+    create_engine,
+    event,
+    select,
+)
 from sqlalchemy.dialects.mysql import LONGTEXT
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker
 
@@ -39,6 +49,7 @@ class WorkspaceRow(Base):
 
 class MembershipRow(Base):
     __tablename__ = "workspace_memberships"
+    __table_args__ = (UniqueConstraint("workspace_id", "user_id"),)
 
     id: Mapped[str] = mapped_column(String(40), primary_key=True)
     workspace_id: Mapped[str] = mapped_column(
@@ -48,6 +59,35 @@ class MembershipRow(Base):
         String(40), ForeignKey("users.id", ondelete="CASCADE"), index=True
     )
     role: Mapped[str] = mapped_column(String(30), default="member", nullable=False)
+    created_at: Mapped[str] = mapped_column(String(40), nullable=False)
+
+
+class TeamRow(Base):
+    __tablename__ = "teams"
+
+    id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    workspace_id: Mapped[str] = mapped_column(
+        String(40), ForeignKey("workspaces.id", ondelete="CASCADE"), index=True
+    )
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    description: Mapped[str] = mapped_column(String(500), default="", nullable=False)
+    policy: Mapped[str] = mapped_column(Text, default="{}", nullable=False)
+    created_by: Mapped[str] = mapped_column(String(40), ForeignKey("users.id"))
+    created_at: Mapped[str] = mapped_column(String(40), nullable=False)
+    updated_at: Mapped[str] = mapped_column(String(40), nullable=False)
+
+
+class TeamMembershipRow(Base):
+    __tablename__ = "team_memberships"
+    __table_args__ = (UniqueConstraint("team_id", "user_id"),)
+
+    id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    team_id: Mapped[str] = mapped_column(
+        String(40), ForeignKey("teams.id", ondelete="CASCADE"), index=True
+    )
+    user_id: Mapped[str] = mapped_column(
+        String(40), ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
     created_at: Mapped[str] = mapped_column(String(40), nullable=False)
 
 
@@ -126,11 +166,12 @@ class Store:
 
     @staticmethod
     def _user_dict(row: UserRow) -> dict[str, object]:
+        role = "user" if row.role in {"member", "owner"} else row.role
         return {
             "id": row.id,
             "name": row.name,
             "email": row.email,
-            "role": row.role,
+            "role": role,
             "active": row.active,
             "created_at": row.created_at,
         }
@@ -211,17 +252,148 @@ class Store:
             return self._user_dict(user) if user and user.active else None
 
     def get_user_workspace(self, user_id: str) -> dict[str, str] | None:
+        return self.get_accessible_workspace(user_id)
+
+    def list_workspaces(self, user_id: str) -> list[dict[str, str]]:
         with self.Session() as db:
-            row = db.execute(
+            user = db.get(UserRow, user_id)
+            if not user:
+                return []
+            if user.role == "admin":
+                rows = db.scalars(select(WorkspaceRow).order_by(WorkspaceRow.name)).all()
+                memberships = {
+                    item.workspace_id: item.role
+                    for item in db.scalars(
+                        select(MembershipRow).where(
+                            MembershipRow.user_id == user_id
+                        )
+                    ).all()
+                }
+                return [
+                    {
+                        **self._workspace_dict(row),
+                        "membership_role": memberships.get(row.id, "admin"),
+                    }
+                    for row in rows
+                ]
+            rows = db.execute(
                 select(WorkspaceRow, MembershipRow.role)
                 .join(MembershipRow, MembershipRow.workspace_id == WorkspaceRow.id)
                 .where(MembershipRow.user_id == user_id)
-                .limit(1)
-            ).first()
+                .order_by(WorkspaceRow.name)
+            ).all()
+            return [
+                {**self._workspace_dict(workspace), "membership_role": role}
+                for workspace, role in rows
+            ]
+
+    def get_accessible_workspace(
+        self, user_id: str, workspace_id: str | None = None
+    ) -> dict[str, str] | None:
+        workspaces = self.list_workspaces(user_id)
+        if workspace_id:
+            return next((item for item in workspaces if item["id"] == workspace_id), None)
+        return workspaces[0] if workspaces else None
+
+    def list_all_users(self) -> list[dict[str, object]]:
+        with self.Session() as db:
+            users = db.scalars(select(UserRow).order_by(UserRow.name)).all()
+            memberships = db.scalars(select(MembershipRow)).all()
+            workspace_ids: dict[str, list[str]] = {}
+            for membership in memberships:
+                workspace_ids.setdefault(membership.user_id, []).append(
+                    membership.workspace_id
+                )
+            return [
+                {
+                    **self._user_dict(user),
+                    "workspace_ids": workspace_ids.get(user.id, []),
+                }
+                for user in users
+            ]
+
+    def create_user(
+        self, *, name: str, email: str, password: str, role: str
+    ) -> dict[str, object]:
+        with self.Session.begin() as db:
+            if db.scalar(
+                select(UserRow.id).where(UserRow.email == email.strip().lower())
+            ):
+                raise ValueError("Já existe um usuário com este e-mail.")
+            row = UserRow(
+                id=f"usr-{uuid4().hex[:12]}",
+                name=name.strip(),
+                email=email.strip().lower(),
+                password_hash=bcrypt.hashpw(
+                    password.encode("utf-8"), bcrypt.gensalt(rounds=12)
+                ).decode("ascii"),
+                role=role,
+                active=True,
+                created_at=utc_now(),
+            )
+            db.add(row)
+        return self._user_dict(row)
+
+    def update_user(
+        self, user_id: str, *, name: str, role: str, active: bool
+    ) -> dict[str, object] | None:
+        with self.Session.begin() as db:
+            row = db.get(UserRow, user_id)
             if not row:
                 return None
-            workspace, membership_role = row
-            return {**self._workspace_dict(workspace), "membership_role": membership_role}
+            row.name = name.strip()
+            row.role = role
+            row.active = active
+        return self._user_dict(row)
+
+    def create_workspace(self, name: str) -> dict[str, str]:
+        now = utc_now()
+        row = WorkspaceRow(
+            id=f"ws-{uuid4().hex[:12]}",
+            name=name.strip(),
+            slug=f"workspace-{uuid4().hex[:8]}",
+            created_at=now,
+        )
+        with self.Session.begin() as db:
+            db.add(row)
+        return self._workspace_dict(row)
+
+    def set_workspace_membership(
+        self, workspace_id: str, user_id: str, enabled: bool
+    ) -> bool:
+        with self.Session() as db:
+            if not db.get(WorkspaceRow, workspace_id) or not db.get(UserRow, user_id):
+                return False
+        with self.Session.begin() as db:
+            membership = db.scalar(
+                select(MembershipRow).where(
+                    MembershipRow.workspace_id == workspace_id,
+                    MembershipRow.user_id == user_id,
+                )
+            )
+            if enabled and not membership:
+                db.add(
+                    MembershipRow(
+                        id=f"mem-{uuid4().hex[:12]}",
+                        workspace_id=workspace_id,
+                        user_id=user_id,
+                        role="member",
+                        created_at=utc_now(),
+                    )
+                )
+            elif not enabled and membership:
+                db.delete(membership)
+                teams = db.scalars(
+                    select(TeamRow.id).where(TeamRow.workspace_id == workspace_id)
+                ).all()
+                for team_membership in db.scalars(
+                    select(TeamMembershipRow).where(
+                        TeamMembershipRow.user_id == user_id,
+                        TeamMembershipRow.team_id.in_(teams),
+                    )
+                ).all():
+                    db.delete(team_membership)
+        return True
 
     def list_users(self, workspace_id: str) -> list[dict[str, object]]:
         with self.Session() as db:
@@ -235,6 +407,199 @@ class Store:
                 {**self._user_dict(user), "workspace_role": role}
                 for user, role in rows
             ]
+
+    @staticmethod
+    def _team_dict(
+        row: TeamRow, member_ids: list[str] | None = None
+    ) -> dict[str, object]:
+        return {
+            "id": row.id,
+            "workspace_id": row.workspace_id,
+            "name": row.name,
+            "description": row.description,
+            "policy": json.loads(row.policy or "{}"),
+            "member_ids": member_ids or [],
+            "created_at": row.created_at,
+            "updated_at": row.updated_at,
+        }
+
+    def list_teams(self, workspace_id: str) -> list[dict[str, object]]:
+        with self.Session() as db:
+            teams = db.scalars(
+                select(TeamRow)
+                .where(TeamRow.workspace_id == workspace_id)
+                .order_by(TeamRow.name)
+            ).all()
+            memberships = db.scalars(select(TeamMembershipRow)).all()
+            members: dict[str, list[str]] = {}
+            for membership in memberships:
+                members.setdefault(membership.team_id, []).append(membership.user_id)
+            return [self._team_dict(team, members.get(team.id, [])) for team in teams]
+
+    def create_team(
+        self,
+        *,
+        workspace_id: str,
+        name: str,
+        description: str,
+        policy: dict[str, object],
+        created_by: str,
+    ) -> dict[str, object]:
+        now = utc_now()
+        row = TeamRow(
+            id=f"team-{uuid4().hex[:12]}",
+            workspace_id=workspace_id,
+            name=name.strip(),
+            description=description.strip(),
+            policy=json.dumps(policy),
+            created_by=created_by,
+            created_at=now,
+            updated_at=now,
+        )
+        with self.Session.begin() as db:
+            db.add(row)
+        return self._team_dict(row)
+
+    def update_team(
+        self,
+        team_id: str,
+        workspace_id: str,
+        *,
+        name: str,
+        description: str,
+        policy: dict[str, object],
+    ) -> dict[str, object] | None:
+        with self.Session.begin() as db:
+            row = db.scalar(
+                select(TeamRow).where(
+                    TeamRow.id == team_id, TeamRow.workspace_id == workspace_id
+                )
+            )
+            if not row:
+                return None
+            row.name = name.strip()
+            row.description = description.strip()
+            row.policy = json.dumps(policy)
+            row.updated_at = utc_now()
+        member_ids = next(
+            (
+                item["member_ids"]
+                for item in self.list_teams(workspace_id)
+                if item["id"] == team_id
+            ),
+            [],
+        )
+        return self._team_dict(row, member_ids)
+
+    def delete_team(self, team_id: str, workspace_id: str) -> bool:
+        with self.Session.begin() as db:
+            row = db.scalar(
+                select(TeamRow).where(
+                    TeamRow.id == team_id, TeamRow.workspace_id == workspace_id
+                )
+            )
+            if not row:
+                return False
+            db.delete(row)
+            return True
+
+    def set_team_members(
+        self, team_id: str, workspace_id: str, user_ids: list[str]
+    ) -> bool:
+        with self.Session.begin() as db:
+            team = db.scalar(
+                select(TeamRow).where(
+                    TeamRow.id == team_id, TeamRow.workspace_id == workspace_id
+                )
+            )
+            if not team:
+                return False
+            allowed_users = set(
+                db.scalars(
+                    select(MembershipRow.user_id).where(
+                        MembershipRow.workspace_id == workspace_id,
+                        MembershipRow.user_id.in_(user_ids),
+                    )
+                ).all()
+            )
+            existing = db.scalars(
+                select(TeamMembershipRow).where(
+                    TeamMembershipRow.team_id == team_id
+                )
+            ).all()
+            existing_ids = {item.user_id for item in existing}
+            for item in existing:
+                if item.user_id not in allowed_users:
+                    db.delete(item)
+            for user_id in allowed_users - existing_ids:
+                db.add(
+                    TeamMembershipRow(
+                        id=f"tmem-{uuid4().hex[:12]}",
+                        team_id=team_id,
+                        user_id=user_id,
+                        created_at=utc_now(),
+                    )
+                )
+        return True
+
+    def effective_permissions(
+        self, user_id: str, workspace_id: str
+    ) -> dict[str, object]:
+        user = self.get_user(user_id)
+        role = user["role"] if user else "user"
+        if role == "admin":
+            return {
+                "create_workflows": True,
+                "edit_workflows": True,
+                "run_workflows": True,
+                "manage_providers": True,
+                "manage_teams": True,
+                "allowed_node_types": None,
+            }
+        with self.Session() as db:
+            team_rows = db.execute(
+                select(TeamRow.policy)
+                .join(
+                    TeamMembershipRow,
+                    TeamMembershipRow.team_id == TeamRow.id,
+                )
+                .where(
+                    TeamRow.workspace_id == workspace_id,
+                    TeamMembershipRow.user_id == user_id,
+                )
+            ).all()
+        policies = [json.loads(row.policy or "{}") for row in team_rows]
+        permissions: dict[str, object] = {
+            "create_workflows": role == "manager",
+            "edit_workflows": role == "manager",
+            "run_workflows": role == "manager",
+            "manage_providers": role == "manager",
+            "manage_teams": role == "manager",
+            "allowed_node_types": None,
+        }
+        for key in (
+            "create_workflows",
+            "edit_workflows",
+            "run_workflows",
+            "manage_providers",
+        ):
+            permissions[key] = bool(
+                permissions[key] or any(policy.get(key) for policy in policies)
+            )
+        if (
+            policies
+            and role != "manager"
+            and all(
+                policy.get("allowed_node_types") is not None
+                for policy in policies
+            )
+        ):
+            restrictions = [
+                set(policy.get("allowed_node_types") or [])
+                for policy in policies
+            ]
+            permissions["allowed_node_types"] = sorted(set().union(*restrictions))
+        return permissions
 
     @staticmethod
     def _provider_dict(

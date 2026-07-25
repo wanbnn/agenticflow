@@ -8,6 +8,7 @@
     catalog: [],
     providers: [],
     workflow: null,
+    permissions: {},
     selectedId: null,
     connectFrom: null,
     zoom: 1,
@@ -87,6 +88,10 @@
     return state.catalog.find((item) => item.type === type);
   }
 
+  function can(permission) {
+    return Boolean(state.permissions?.[permission]);
+  }
+
   function providerName(providerId) {
     if (!providerId || providerId === "mock") return "Simulado";
     return state.providers.find((item) => item.id === providerId)?.name || "Provedor indisponível";
@@ -125,7 +130,7 @@
             ${items
               .map(
                 (item) => `
-                  <div class="catalog-node" draggable="true" data-node-type="${item.type}">
+                  <div class="catalog-node" draggable="${can("edit_workflows")}" data-node-type="${item.type}">
                     <span class="catalog-icon" style="--node-color:${item.color}">${item.icon}</span>
                     <span>
                       <strong>${escapeHtml(item.name)}</strong>
@@ -141,6 +146,10 @@
 
     $$(".catalog-node", dom.catalog).forEach((item) => {
       item.addEventListener("dragstart", (event) => {
+        if (!can("edit_workflows")) {
+          event.preventDefault();
+          return;
+        }
         event.dataTransfer.setData("application/agentic-node", item.dataset.nodeType);
         event.dataTransfer.effectAllowed = "copy";
       });
@@ -309,6 +318,7 @@
 
   function startNodeDrag(event) {
     if (
+      !can("edit_workflows") ||
       event.button !== 0 ||
       event.target.closest(".handle,button") ||
       $("#pan-tool").classList.contains("active")
@@ -403,7 +413,7 @@
   window.addEventListener("pointercancel", finishPointerInteraction);
 
   function startConnectionDrag(event, nodeId, handle) {
-    if (event.button !== 0) return;
+    if (event.button !== 0 || !can("edit_workflows")) return;
     state.connectFrom = { nodeId, handle: handle.dataset.handle };
     state.connectionDrag = {
       pointerId: event.pointerId,
@@ -507,6 +517,7 @@
   }
 
   function addNode(type, point = null) {
+    if (!can("edit_workflows")) return;
     const meta = catalogItem(type);
     if (!meta) return;
     snapshot();
@@ -630,10 +641,15 @@
       await navigator.clipboard.writeText(endpoint);
       toast("URL do webhook copiada.");
     });
+    if (!can("edit_workflows")) {
+      $$("input,textarea,select,button", dom.inspectorForm).forEach(
+        (control) => (control.disabled = true)
+      );
+    }
   }
 
   function deleteSelected() {
-    if (!state.selectedId) return;
+    if (!state.selectedId || !can("edit_workflows")) return;
     snapshot();
     state.workflow.nodes = state.workflow.nodes.filter((node) => node.id !== state.selectedId);
     state.workflow.edges = state.workflow.edges.filter(
@@ -646,7 +662,7 @@
   }
 
   function autoLayout() {
-    if (!state.workflow.nodes.length) return;
+    if (!state.workflow.nodes.length || !can("edit_workflows")) return;
     snapshot();
     const nodes = state.workflow.nodes;
     const inbound = Object.fromEntries(nodes.map((node) => [node.id, 0]));
@@ -814,6 +830,19 @@
     applyTransform();
   }
 
+  function applyPermissions() {
+    const editable = can("edit_workflows");
+    document.body.classList.toggle("workflow-readonly", !editable);
+    dom.workflowName.disabled = !editable;
+    $("#save-button").classList.toggle("hidden", !editable);
+    $("#run-button").classList.toggle("hidden", !can("run_workflows"));
+    $("#auto-layout").classList.toggle("hidden", !editable);
+    $("#delete-node").classList.toggle("hidden", !editable);
+    $$("input,textarea,select", dom.inspectorForm).forEach(
+      (control) => (control.disabled = !editable)
+    );
+  }
+
   function bindGlobalEvents() {
     $("#node-search").addEventListener("input", (event) => renderCatalog(event.target.value));
     document.addEventListener("keydown", (event) => {
@@ -934,16 +963,19 @@
   async function init() {
     try {
       const workflowId = document.querySelector(".app-shell")?.dataset.workflowId;
-      const [catalog, workflow, providers] = await Promise.all([
+      const [catalog, workflow, providers, context] = await Promise.all([
         api("/api/catalog"),
         api(`/api/workflows/${workflowId}`),
         api("/api/providers"),
+        api("/api/auth/me"),
       ]);
       state.catalog = catalog;
       state.workflow = workflow;
       state.providers = providers;
+      state.permissions = context.permissions || {};
       renderCatalog();
       hydrateWorkflow();
+      applyPermissions();
       bindGlobalEvents();
       setTimeout(fitView, 80);
     } catch (error) {

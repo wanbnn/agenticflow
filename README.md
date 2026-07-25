@@ -40,7 +40,8 @@ programa.
 - Configure provedores e chaves pela interface.
 - Publique entradas por webhook com URL exclusiva.
 - Teste com dados reais e acompanhe o tracing por nó.
-- Separe projetos e usuários por workspace.
+- Administre múltiplos workspaces e libere usuários em cada ambiente.
+- Organize usuários em times com políticas de workflows, execução, provedores e tipos de nó.
 
 ## ✨ Recursos
 
@@ -50,7 +51,7 @@ programa.
 | Multiagente | Papéis independentes, prompts, campos de entrada/saída e colaboração sequencial ou ramificada |
 | Nós | Entrada, Webhook, Prompt, Modelo LLM, Agente IA, Condição, Transformação, HTTP, Memória e Saída |
 | Provedores | OpenAI, Anthropic, Ollama, Groq, OpenRouter, Gemini, Mistral e APIs compatíveis |
-| Segurança | Bootstrap do admin, login, sessões assinadas, isolamento por workspace e credenciais criptografadas |
+| Segurança | RBAC Admin/Manager/User, multi-workspace, times, políticas, sessões assinadas e credenciais criptografadas |
 | Operação | MySQL, histórico de runs, healthcheck, volumes Docker e API OpenAPI em `/docs` |
 | Integrações | Webhooks persistentes e requisições HTTP para serviços externos |
 
