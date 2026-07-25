@@ -49,8 +49,9 @@ programa.
 | --- | --- |
 | Editor visual | Drag-and-drop, conexões, zoom, minimapa, auto-layout, undo/redo e inspetor |
 | Multiagente | Papéis independentes, prompts, campos de entrada/saída e colaboração sequencial ou ramificada |
-| Nós | Entrada, Webhook, Prompt, LLM, Agente, Condição, Documentos, Imagens, Vídeo para frames, Transformação, HTTP, Memória e Saída |
+| Nós | Entrada, Webhook, Prompt, LLM, Agente, Banco de Vetores, RAG, Condição, Documentos, Imagens, Vídeo para frames, Transformação, HTTP, Memória e Saída |
 | Templates | Biblioteca de workflows prontos para documentos, imagens, vídeos, atendimento e pipelines multiagente |
+| Conhecimento | Banco de Vetores nativo por nó, ingestão persistente, busca semântica local e RAG conectado a agentes |
 | Provedores | OpenAI, Anthropic, Ollama, Groq, OpenRouter, Gemini, Mistral e APIs compatíveis |
 | Segurança | RBAC Admin/Manager/User, multi-workspace, times, políticas, sessões assinadas e credenciais criptografadas |
 | Operação | MySQL, histórico de runs, healthcheck, volumes Docker e API OpenAPI em `/docs` |
@@ -70,6 +71,20 @@ que podem ser conectadas aos próximos nós:
 
 O limite padrão por asset é 25 MB e pode ser alterado com
 `AGENTIC_FLOW_MAX_ASSET_MB`.
+
+### Banco de Vetores e RAG
+
+Cada nó **Banco de Vetores** cria uma coleção persistente própria, isolada pelo
+workspace, workflow e ID do nó. O conteúdo recebido é dividido em trechos,
+vetorizado localmente e deduplicado antes de ser armazenado no MySQL ou SQLite.
+O modo `append` mantém o conhecimento anterior e `replace` recria o conteúdo da
+coleção a cada execução.
+
+O nó **Busca RAG** seleciona uma dessas bases, consulta os trechos mais próximos
+e publica `rag_context` e `rag_matches` para as próximas etapas. Também é
+possível selecionar o Banco de Vetores diretamente no inspetor de um
+**Agente IA**; nesse caso, o agente recupera e incorpora o contexto
+automaticamente antes de chamar o modelo.
 
 ## 🚀 Início rápido com Docker
 

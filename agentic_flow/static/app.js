@@ -181,6 +181,11 @@
     if (node.type === "file") return `${String(node.config.format || "auto").toUpperCase()} · ${node.config.output_field || "document_text"}`;
     if (node.type === "image") return `${node.config.operation || "inspect"} · ${node.config.output_format || "PNG"}`;
     if (node.type === "video_frames") return `a cada ${node.config.interval_seconds || 1}s · até ${node.config.max_frames || 12} frames`;
+    if (node.type === "vector_database") return `${node.config.write_mode || "append"} · base isolada`;
+    if (node.type === "rag") {
+      const database = state.workflow?.nodes.find((item) => item.id === node.config.vector_db_node_id);
+      return database ? `busca em ${database.name}` : "selecione uma base";
+    }
     if (node.type === "input") return `campo: ${node.config.field || "message"}`;
     if (node.type === "output") return `retorna: ${node.config.field || "response"}`;
     if (node.type === "http") return `${node.config.method || "GET"} · API`;
@@ -600,6 +605,25 @@
               .join("")}
           </select>
           <small class="field-help"><a href="/settings/providers">Gerenciar provedores do workspace</a></small>`;
+        } else if (field.type === "node_select") {
+          const allowedTypes = field.node_types || [];
+          const options = state.workflow.nodes.filter(
+            (candidate) =>
+              candidate.id !== node.id &&
+              (!allowedTypes.length || allowedTypes.includes(candidate.type))
+          );
+          control = `<select data-config-key="${field.key}">
+            <option value="">Nenhum</option>
+            ${options
+              .map(
+                (candidate) =>
+                  `<option value="${escapeHtml(candidate.id)}" ${
+                    String(value) === candidate.id ? "selected" : ""
+                  }>${escapeHtml(candidate.name)}</option>`
+              )
+              .join("")}
+          </select>
+          <small class="field-help">Cada nó de Banco de Vetores mantém uma base independente.</small>`;
         } else if (field.type === "webhook_url") {
           const endpoint = value
             ? `${window.location.origin}/webhooks/${value}`
@@ -632,10 +656,27 @@
     const note =
       node.type === "llm" || node.type === "agent"
         ? '<div class="provider-note">Escolha um provedor cadastrado visualmente. O modelo em branco usa o padrão definido no provedor.</div>'
+        : node.type === "vector_database"
+        ? '<div class="provider-note"><strong id="vector-database-status">Consultando a base…</strong><br>Esta instância possui armazenamento próprio. Conteúdo repetido é deduplicado automaticamente.</div>'
+        : node.type === "rag"
+        ? '<div class="provider-note">A busca publica o contexto e os resultados no fluxo para o próximo agente ou modelo.</div>'
         : node.type === "webhook"
         ? '<div class="provider-note">A URL é exclusiva deste nó. O corpo JSON recebido vira os dados de entrada e a execução aparece no histórico do workflow.</div>'
         : "";
     dom.inspectorForm.innerHTML = nameField + configFields + note;
+    if (node.type === "vector_database") {
+      const status = $("#vector-database-status", dom.inspectorForm);
+      api(`/api/workflows/${state.workflow.id}/vector-databases/${node.id}`)
+        .then((details) => {
+          if (state.selectedId === node.id && status.isConnected) {
+            const total = Number(details.chunks_total || 0);
+            status.textContent = `${total} ${total === 1 ? "trecho indexado" : "trechos indexados"}`;
+          }
+        })
+        .catch(() => {
+          if (status.isConnected) status.textContent = "Salve o workflow para criar esta base";
+        });
+    }
 
     $("[data-node-name]", dom.inspectorForm).addEventListener("change", (event) => {
       snapshot();
@@ -670,7 +711,11 @@
   function deleteSelected() {
     if (!state.selectedId || !can("edit_workflows")) return;
     snapshot();
-    state.workflow.nodes = state.workflow.nodes.filter((node) => node.id !== state.selectedId);
+    const removedId = state.selectedId;
+    state.workflow.nodes = state.workflow.nodes.filter((node) => node.id !== removedId);
+    state.workflow.nodes.forEach((node) => {
+      if (node.config.vector_db_node_id === removedId) node.config.vector_db_node_id = "";
+    });
     state.workflow.edges = state.workflow.edges.filter(
       (edge) => edge.source !== state.selectedId && edge.target !== state.selectedId
     );

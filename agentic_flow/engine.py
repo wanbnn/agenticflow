@@ -13,6 +13,7 @@ from langgraph.graph import END, START, StateGraph
 from .catalog import CATALOG_BY_TYPE
 from .media import extract_video_frames, process_image, read_document
 from .models import Node, RunEvent, RunRequest, RunResult, Workflow, utc_now
+from .vectors import chunk_text, documents_from_value, embed_text
 
 
 def merge_dicts(left: dict[str, Any], right: dict[str, Any]) -> dict[str, Any]:
@@ -26,6 +27,7 @@ class FlowState(TypedDict):
     output: Annotated[dict[str, Any], merge_dicts]
     session_id: str
     workspace_id: str
+    workflow_id: str
 
 
 class WorkflowValidationError(ValueError):
@@ -55,9 +57,15 @@ def validate_workflow(workflow: Workflow) -> None:
     if len(ids) != len(set(ids)):
         raise WorkflowValidationError("Existem nós com IDs duplicados.")
     known = set(ids)
+    node_types = {node.id: node.type for node in workflow.nodes}
     for node in workflow.nodes:
         if node.type not in CATALOG_BY_TYPE:
             raise WorkflowValidationError(f"Tipo de nó desconhecido: {node.type}")
+        vector_node_id = node.config.get("vector_db_node_id")
+        if vector_node_id and node_types.get(str(vector_node_id)) != "vector_database":
+            raise WorkflowValidationError(
+                f"“{node.name}” referencia um Banco de Vetores inexistente."
+            )
     for edge in workflow.edges:
         if edge.source not in known or edge.target not in known:
             raise WorkflowValidationError(f"Conexão {edge.id} referencia um nó inexistente.")
@@ -93,8 +101,31 @@ def validate_workflow(workflow: Workflow) -> None:
 
 
 class WorkflowEngine:
-    def __init__(self, provider_runtime=None):
+    def __init__(self, provider_runtime=None, vector_store=None):
         self.provider_runtime = provider_runtime
+        self.vector_store = vector_store
+
+    def _search_vector_database(
+        self,
+        *,
+        state: FlowState,
+        node_id: str,
+        query: str,
+        top_k: int,
+        min_score: float,
+    ) -> list[dict[str, Any]]:
+        if not self.vector_store:
+            raise RuntimeError("O armazenamento vetorial não está configurado.")
+        if not node_id:
+            raise ValueError("Selecione um nó de Banco de Vetores.")
+        return self.vector_store.search_vectors(
+            workspace_id=state.get("workspace_id", ""),
+            workflow_id=state.get("workflow_id", ""),
+            node_id=node_id,
+            query_embedding=embed_text(query),
+            limit=top_k,
+            min_score=min_score,
+        )
 
     def _call_model(
         self,
@@ -168,6 +199,95 @@ class WorkflowEngine:
                 result = extract_video_frames(asset, config)
                 data[output_field] = result["frames"]
                 data[f"{output_field}_metadata"] = result["metadata"]
+            elif node.type == "vector_database":
+                if not self.vector_store:
+                    raise RuntimeError("O armazenamento vetorial não está configurado.")
+                input_field = config.get("input_field", "document_text")
+                output_field = config.get("output_field", "vector_database")
+                value = lookup(data, input_field, None)
+                if value is None:
+                    raise ValueError(
+                        f"O campo de conteúdo “{input_field}” não foi informado."
+                    )
+                configured_metadata = lookup(
+                    data, config.get("metadata_field", ""), {}
+                )
+                chunks: list[dict[str, Any]] = []
+                for document_index, document in enumerate(documents_from_value(value)):
+                    metadata = {
+                        **(
+                            configured_metadata
+                            if isinstance(configured_metadata, dict)
+                            else {}
+                        ),
+                        **document["metadata"],
+                        "document_index": document_index,
+                    }
+                    for chunk_index, content in enumerate(
+                        chunk_text(
+                            document["text"],
+                            int(config.get("chunk_size", 900)),
+                            int(config.get("chunk_overlap", 120)),
+                        )
+                    ):
+                        chunks.append(
+                            {
+                                "content": content,
+                                "embedding": embed_text(content),
+                                "metadata": {
+                                    **metadata,
+                                    "chunk_index": chunk_index,
+                                },
+                            }
+                        )
+                if not chunks:
+                    raise ValueError("O conteúdo recebido não possui texto para indexar.")
+                result = self.vector_store.ingest_vectors(
+                    workspace_id=state.get("workspace_id", ""),
+                    workflow_id=state.get("workflow_id", ""),
+                    node_id=node.id,
+                    name=node.name,
+                    chunks=chunks,
+                    replace=config.get("write_mode", "append") == "replace",
+                )
+                data[output_field] = result
+                data["_last_vector_database_node_id"] = node.id
+            elif node.type == "rag":
+                query_field = config.get("query_field", "message")
+                query = str(
+                    lookup(
+                        data,
+                        query_field,
+                        data.get("prompt") or data.get("message") or "",
+                    )
+                ).strip()
+                if not query:
+                    raise ValueError(
+                        f"O campo de consulta “{query_field}” não foi informado."
+                    )
+                vector_node_id = (
+                    config.get("vector_db_node_id")
+                    or data.get("_last_vector_database_node_id")
+                )
+                matches = self._search_vector_database(
+                    state=state,
+                    node_id=str(vector_node_id or ""),
+                    query=query,
+                    top_k=int(config.get("top_k", 5)),
+                    min_score=float(config.get("min_score", 0)),
+                )
+                context_field = config.get("context_field", "rag_context")
+                matches_field = config.get("matches_field", "rag_matches")
+                separator = config.get("separator", "\n\n---\n\n")
+                context = separator.join(match["content"] for match in matches)
+                result = {
+                    "query": query,
+                    "vector_db_node_id": vector_node_id,
+                    "context": context,
+                    "matches": matches,
+                }
+                data[context_field] = context
+                data[matches_field] = matches
             elif node.type == "condition":
                 actual = lookup(data, config.get("field", ""))
                 expected = config.get("value")
@@ -210,6 +330,24 @@ class WorkflowEngine:
                         data.get("prompt") or data.get("response") or data.get("message") or json.dumps(data),
                     )
                 )
+                vector_node_id = config.get("vector_db_node_id")
+                if vector_node_id:
+                    matches = self._search_vector_database(
+                        state=state,
+                        node_id=str(vector_node_id),
+                        query=prompt,
+                        top_k=int(config.get("rag_top_k", 5)),
+                        min_score=float(config.get("rag_min_score", 0)),
+                    )
+                    data["rag_matches"] = matches
+                    data["rag_context"] = "\n\n---\n\n".join(
+                        match["content"] for match in matches
+                    )
+                if data.get("rag_context"):
+                    prompt = (
+                        f"{prompt}\n\nContexto recuperado da base de conhecimento:\n"
+                        f"{data['rag_context']}"
+                    )
                 instructions = render_template(
                     config.get("system_prompt", "Atue como {{role}}."),
                     {**data, "role": role},
@@ -336,6 +474,7 @@ class WorkflowEngine:
                     "output": {},
                     "session_id": request.session_id,
                     "workspace_id": workspace_id,
+                    "workflow_id": workflow.id,
                 }
             )
             output = state.get("output", {}).get("value")

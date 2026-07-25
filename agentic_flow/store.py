@@ -139,6 +139,50 @@ class ProviderRow(Base):
     updated_at: Mapped[str] = mapped_column(String(40), nullable=False)
 
 
+class VectorCollectionRow(Base):
+    __tablename__ = "vector_collections"
+    __table_args__ = (
+        UniqueConstraint("workspace_id", "workflow_id", "node_id"),
+    )
+
+    id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    workspace_id: Mapped[str] = mapped_column(
+        String(40), ForeignKey("workspaces.id", ondelete="CASCADE"), index=True
+    )
+    workflow_id: Mapped[str] = mapped_column(
+        String(40), ForeignKey("workflows.id", ondelete="CASCADE"), index=True
+    )
+    node_id: Mapped[str] = mapped_column(String(80), index=True)
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    created_at: Mapped[str] = mapped_column(String(40), nullable=False)
+    updated_at: Mapped[str] = mapped_column(String(40), nullable=False)
+
+
+class VectorDocumentRow(Base):
+    __tablename__ = "vector_documents"
+    __table_args__ = (
+        UniqueConstraint("collection_id", "content_hash"),
+    )
+
+    id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    collection_id: Mapped[str] = mapped_column(
+        String(40),
+        ForeignKey("vector_collections.id", ondelete="CASCADE"),
+        index=True,
+    )
+    content: Mapped[str] = mapped_column(
+        Text().with_variant(LONGTEXT(), "mysql"), nullable=False
+    )
+    content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    embedding: Mapped[str] = mapped_column(
+        Text().with_variant(LONGTEXT(), "mysql"), nullable=False
+    )
+    metadata_json: Mapped[str] = mapped_column(
+        Text().with_variant(LONGTEXT(), "mysql"), default="{}", nullable=False
+    )
+    created_at: Mapped[str] = mapped_column(String(40), nullable=False)
+
+
 class Store:
     def __init__(self, database: str | Path):
         if isinstance(database, Path) or "://" not in str(database):
@@ -761,6 +805,8 @@ class Store:
                     updated_at=workflow.updated_at,
                 )
             )
+            db.flush()
+            self._sync_vector_collections(db, workflow, workspace_id)
         return workflow
 
     def update_workflow(
@@ -788,6 +834,7 @@ class Store:
             row.version = workflow.version
             row.payload = workflow.model_dump_json()
             row.updated_at = workflow.updated_at
+            self._sync_vector_collections(db, workflow, workspace_id)
         return workflow
 
     def delete_workflow(self, workflow_id: str, workspace_id: str) -> bool:
@@ -830,3 +877,204 @@ class Store:
                 .limit(limit)
             ).all()
             return [RunResult.model_validate_json(row.payload) for row in rows]
+
+    def _vector_collection(
+        self,
+        db,
+        *,
+        workspace_id: str,
+        workflow_id: str,
+        node_id: str,
+        name: str = "Banco de Vetores",
+        create: bool = False,
+    ) -> VectorCollectionRow | None:
+        row = db.scalar(
+            select(VectorCollectionRow).where(
+                VectorCollectionRow.workspace_id == workspace_id,
+                VectorCollectionRow.workflow_id == workflow_id,
+                VectorCollectionRow.node_id == node_id,
+            )
+        )
+        if not row and create:
+            now = utc_now()
+            row = VectorCollectionRow(
+                id=f"vec-{uuid4().hex[:12]}",
+                workspace_id=workspace_id,
+                workflow_id=workflow_id,
+                node_id=node_id,
+                name=name[:120],
+                created_at=now,
+                updated_at=now,
+            )
+            db.add(row)
+            db.flush()
+        return row
+
+    def _sync_vector_collections(
+        self, db, workflow: Workflow, workspace_id: str
+    ) -> None:
+        vector_nodes = {
+            node.id: node
+            for node in workflow.nodes
+            if node.type == "vector_database"
+        }
+        existing = db.scalars(
+            select(VectorCollectionRow).where(
+                VectorCollectionRow.workspace_id == workspace_id,
+                VectorCollectionRow.workflow_id == workflow.id,
+            )
+        ).all()
+        for collection in existing:
+            if collection.node_id not in vector_nodes:
+                db.delete(collection)
+            else:
+                collection.name = vector_nodes[collection.node_id].name[:120]
+                collection.updated_at = utc_now()
+        existing_ids = {collection.node_id for collection in existing}
+        for node_id, node in vector_nodes.items():
+            if node_id not in existing_ids:
+                self._vector_collection(
+                    db,
+                    workspace_id=workspace_id,
+                    workflow_id=workflow.id,
+                    node_id=node_id,
+                    name=node.name,
+                    create=True,
+                )
+
+    def ingest_vectors(
+        self,
+        *,
+        workspace_id: str,
+        workflow_id: str,
+        node_id: str,
+        name: str,
+        chunks: list[dict[str, object]],
+        replace: bool = False,
+    ) -> dict[str, object]:
+        import hashlib
+
+        with self.Session.begin() as db:
+            collection = self._vector_collection(
+                db,
+                workspace_id=workspace_id,
+                workflow_id=workflow_id,
+                node_id=node_id,
+                name=name,
+                create=True,
+            )
+            assert collection is not None
+            if replace:
+                for row in db.scalars(
+                    select(VectorDocumentRow).where(
+                        VectorDocumentRow.collection_id == collection.id
+                    )
+                ).all():
+                    db.delete(row)
+                db.flush()
+            existing = set(
+                db.scalars(
+                    select(VectorDocumentRow.content_hash).where(
+                        VectorDocumentRow.collection_id == collection.id
+                    )
+                ).all()
+            )
+            added = 0
+            for chunk in chunks:
+                content = str(chunk["content"])
+                content_hash = hashlib.sha256(content.encode("utf-8")).hexdigest()
+                if content_hash in existing:
+                    continue
+                db.add(
+                    VectorDocumentRow(
+                        id=f"vdoc-{uuid4().hex[:12]}",
+                        collection_id=collection.id,
+                        content=content,
+                        content_hash=content_hash,
+                        embedding=json.dumps(chunk["embedding"]),
+                        metadata_json=json.dumps(
+                            chunk.get("metadata") or {}, ensure_ascii=False
+                        ),
+                        created_at=utc_now(),
+                    )
+                )
+                existing.add(content_hash)
+                added += 1
+            collection.name = name[:120]
+            collection.updated_at = utc_now()
+            total = len(existing)
+            collection_id = collection.id
+        return {
+            "collection_id": collection_id,
+            "node_id": node_id,
+            "chunks_added": added,
+            "chunks_total": total,
+        }
+
+    def search_vectors(
+        self,
+        *,
+        workspace_id: str,
+        workflow_id: str,
+        node_id: str,
+        query_embedding: list[float],
+        limit: int = 5,
+        min_score: float = 0.0,
+    ) -> list[dict[str, object]]:
+        from .vectors import cosine_similarity
+
+        with self.Session() as db:
+            collection = self._vector_collection(
+                db,
+                workspace_id=workspace_id,
+                workflow_id=workflow_id,
+                node_id=node_id,
+            )
+            if not collection:
+                return []
+            rows = db.scalars(
+                select(VectorDocumentRow).where(
+                    VectorDocumentRow.collection_id == collection.id
+                )
+            ).all()
+            matches = []
+            for row in rows:
+                score = cosine_similarity(query_embedding, json.loads(row.embedding))
+                if score >= min_score:
+                    matches.append(
+                        {
+                            "id": row.id,
+                            "content": row.content,
+                            "score": round(score, 6),
+                            "metadata": json.loads(row.metadata_json or "{}"),
+                        }
+                    )
+            matches.sort(key=lambda item: item["score"], reverse=True)
+            return matches[: max(1, min(int(limit), 20))]
+
+    def vector_stats(
+        self, workspace_id: str, workflow_id: str, node_id: str
+    ) -> dict[str, object]:
+        with self.Session() as db:
+            collection = self._vector_collection(
+                db,
+                workspace_id=workspace_id,
+                workflow_id=workflow_id,
+                node_id=node_id,
+            )
+            if not collection:
+                return {"node_id": node_id, "collection_id": None, "chunks_total": 0}
+            count = len(
+                db.scalars(
+                    select(VectorDocumentRow.id).where(
+                        VectorDocumentRow.collection_id == collection.id
+                    )
+                ).all()
+            )
+            return {
+                "node_id": node_id,
+                "collection_id": collection.id,
+                "name": collection.name,
+                "chunks_total": count,
+                "updated_at": collection.updated_at,
+            }

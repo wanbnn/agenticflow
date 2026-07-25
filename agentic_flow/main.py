@@ -192,7 +192,7 @@ def create_app(database: str | Path | None = None) -> FastAPI:
         os.getenv("SESSION_SECRET", "dev-only-change-this-session-secret"),
     )
     provider_runtime = ProviderRuntime(store, encryption_secret)
-    engine = WorkflowEngine(provider_runtime)
+    engine = WorkflowEngine(provider_runtime, store)
     app.state.store = store
     app.state.engine = engine
     app.add_middleware(
@@ -691,6 +691,11 @@ def create_app(database: str | Path | None = None) -> FastAPI:
         )
         validate_node_access(payload, permissions)
         prepared = provision_webhooks(payload)
+        if prepared.nodes:
+            try:
+                validate_workflow(Workflow(**prepared.model_dump()))
+            except ValueError as exc:
+                raise HTTPException(422, str(exc)) from exc
         return store.create_workflow(prepared, workspace["id"], user["id"])
 
     @app.get("/api/workflows/{workflow_id}")
@@ -742,6 +747,19 @@ def create_app(database: str | Path | None = None) -> FastAPI:
         if not store.get_workflow(workflow_id, workspace["id"]):
             raise HTTPException(404, "Workflow não encontrado.")
         return store.list_runs(workflow_id, workspace["id"], min(max(limit, 1), 100))
+
+    @app.get("/api/workflows/{workflow_id}/vector-databases/{node_id}")
+    def vector_database_stats(workflow_id: str, node_id: str, request: Request):
+        _, workspace = auth_context(request)
+        workflow = store.get_workflow(workflow_id, workspace["id"])
+        if not workflow:
+            raise HTTPException(404, "Workflow não encontrado.")
+        if not any(
+            node.id == node_id and node.type == "vector_database"
+            for node in workflow.nodes
+        ):
+            raise HTTPException(404, "Banco de Vetores não encontrado.")
+        return store.vector_stats(workspace["id"], workflow_id, node_id)
 
     @app.post("/webhooks/{webhook_id}")
     async def receive_webhook(webhook_id: str, request: Request):
