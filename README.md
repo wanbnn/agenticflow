@@ -49,11 +49,27 @@ programa.
 | --- | --- |
 | Editor visual | Drag-and-drop, conexões, zoom, minimapa, auto-layout, undo/redo e inspetor |
 | Multiagente | Papéis independentes, prompts, campos de entrada/saída e colaboração sequencial ou ramificada |
-| Nós | Entrada, Webhook, Prompt, Modelo LLM, Agente IA, Condição, Transformação, HTTP, Memória e Saída |
+| Nós | Entrada, Webhook, Prompt, LLM, Agente, Condição, Documentos, Imagens, Vídeo para frames, Transformação, HTTP, Memória e Saída |
+| Templates | Biblioteca de workflows prontos para documentos, imagens, vídeos, atendimento e pipelines multiagente |
 | Provedores | OpenAI, Anthropic, Ollama, Groq, OpenRouter, Gemini, Mistral e APIs compatíveis |
 | Segurança | RBAC Admin/Manager/User, multi-workspace, times, políticas, sessões assinadas e credenciais criptografadas |
 | Operação | MySQL, histórico de runs, healthcheck, volumes Docker e API OpenAPI em `/docs` |
 | Integrações | Webhooks persistentes e requisições HTTP para serviços externos |
+
+### Arquivos e mídia
+
+O playground permite anexar um arquivo diretamente a qualquer campo da entrada
+JSON. Os nós multimídia recebem o asset como data URI/base64 e produzem saídas
+que podem ser conectadas aos próximos nós:
+
+- **Ler documento:** PDF, TXT, Markdown, CSV, JSON, XML, HTML, YAML, DOCX e XLSX.
+- **Processar imagem:** PNG, JPEG, WebP, GIF, BMP e TIFF; inspeção,
+  redimensionamento, conversão e escala de cinza.
+- **Vídeo para frames:** MP4, WebM, MOV, AVI e formatos reconhecidos pelo
+  OpenCV, com intervalo, limite e formato de frame configuráveis.
+
+O limite padrão por asset é 25 MB e pode ser alterado com
+`AGENTIC_FLOW_MAX_ASSET_MB`.
 
 ## 🚀 Início rápido com Docker
 

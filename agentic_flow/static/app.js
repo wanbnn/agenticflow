@@ -111,6 +111,22 @@
     return div.innerHTML;
   }
 
+  function formatOutput(value) {
+    if (typeof value === "string") {
+      return value.startsWith("data:") && value.length > 180
+        ? `[data URI omitida da visualização · ${value.length} caracteres]`
+        : value;
+    }
+    return JSON.stringify(
+      value,
+      (_key, item) =>
+        typeof item === "string" && item.startsWith("data:") && item.length > 180
+          ? `[data URI omitida · ${item.length} caracteres]`
+          : item,
+      2
+    );
+  }
+
   function renderCatalog(query = "") {
     const normalized = query.trim().toLowerCase();
     const groups = {};
@@ -162,6 +178,9 @@
     if (node.type === "agent") return `${node.config.role || "Especialista"} · ${providerName(node.config.provider_id || node.config.provider)}`;
     if (node.type === "webhook") return node.config.webhook_id ? "Endpoint ativo" : "Salve para ativar";
     if (node.type === "prompt") return "Template dinâmico";
+    if (node.type === "file") return `${String(node.config.format || "auto").toUpperCase()} · ${node.config.output_field || "document_text"}`;
+    if (node.type === "image") return `${node.config.operation || "inspect"} · ${node.config.output_format || "PNG"}`;
+    if (node.type === "video_frames") return `a cada ${node.config.interval_seconds || 1}s · até ${node.config.max_frames || 12} frames`;
     if (node.type === "input") return `campo: ${node.config.field || "message"}`;
     if (node.type === "output") return `retorna: ${node.config.field || "response"}`;
     if (node.type === "http") return `${node.config.method || "GET"} · API`;
@@ -799,7 +818,7 @@
       const output = result.status === "success" ? result.output : result.error;
       dom.runTrace.innerHTML = `
         <pre class="trace-output">${escapeHtml(
-          typeof output === "string" ? output : JSON.stringify(output, null, 2)
+          formatOutput(output)
         )}</pre>
         ${result.events
           .map(
@@ -957,6 +976,35 @@
         $("#validation-label").textContent = "JSON inválido";
         $("#validation-label").classList.add("invalid");
       }
+    });
+    $("#asset-file").addEventListener("change", (event) => {
+      const file = event.target.files?.[0];
+      if (!file) return;
+      if (file.size > 25 * 1024 * 1024) {
+        toast("O arquivo excede o limite de 25 MB.", "error");
+        event.target.value = "";
+        return;
+      }
+      const reader = new FileReader();
+      reader.addEventListener("load", () => {
+        let input;
+        try {
+          input = JSON.parse(dom.runInput.value);
+        } catch {
+          input = {};
+        }
+        const field = $("#asset-field").value.trim() || "file";
+        input[field] = {
+          name: file.name,
+          mime_type: file.type || "application/octet-stream",
+          data: reader.result,
+        };
+        dom.runInput.value = JSON.stringify(input, null, 2);
+        dom.runInput.dispatchEvent(new Event("input"));
+        $("#asset-file-label").textContent = `${file.name} · ${Math.ceil(file.size / 1024)} KB`;
+        toast(`Arquivo anexado no campo “${field}”.`);
+      });
+      reader.readAsDataURL(file);
     });
   }
 

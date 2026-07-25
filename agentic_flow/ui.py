@@ -279,6 +279,34 @@ def RunDrawer(_props):
                 ),
                 h(
                     "div",
+                    {"className": "asset-input-row"},
+                    h(
+                        "input",
+                        {
+                            "id": "asset-field",
+                            "value": "file",
+                            "placeholder": "campo",
+                            "title": "Campo JSON que receberá o arquivo",
+                        },
+                    ),
+                    h(
+                        "label",
+                        {"className": "button secondary asset-picker", "htmlFor": "asset-file"},
+                        "Anexar arquivo",
+                    ),
+                    h(
+                        "input",
+                        {
+                            "id": "asset-file",
+                            "className": "hidden",
+                            "type": "file",
+                            "accept": ".pdf,.txt,.md,.markdown,.csv,.json,.xml,.html,.yaml,.yml,.docx,.xlsx,image/*,video/*",
+                        },
+                    ),
+                    h("span", {"id": "asset-file-label"}, "PDF, texto, imagem ou vídeo"),
+                ),
+                h(
+                    "div",
                     {"className": "drawer-actions"},
                     h("span", {"id": "validation-label"}, "JSON válido"),
                     h(
@@ -562,10 +590,20 @@ def Dashboard(props):
                 *(
                     [
                         h(
-                            "button",
-                            {"className": "button primary", "id": "new-workflow-button"},
-                            h("span", None, "+"),
-                            "Novo workflow",
+                            "div",
+                            {"className": "dashboard-heading-actions"},
+                            h(
+                                "button",
+                                {"className": "button secondary", "id": "template-library-button"},
+                                h("span", None, "▦"),
+                                "Usar template",
+                            ),
+                            h(
+                                "button",
+                                {"className": "button primary", "id": "new-workflow-button"},
+                                h("span", None, "+"),
+                                "Novo workflow",
+                            ),
                         )
                     ]
                     if can_create
@@ -652,6 +690,73 @@ def Dashboard(props):
                 h("div", {"className": "auth-error hidden", "id": "workflow-error"}),
                 h("button", {"className": "button primary auth-submit", "type": "submit"}, "Criar workflow"),
             ),
+        ),
+        *(
+            [
+                h(
+                    "div",
+                    {"className": "modal-backdrop hidden", "id": "template-modal"},
+                    h(
+                        "section",
+                        {"className": "template-library-modal"},
+                        h(
+                            "header",
+                            {"className": "template-library-head"},
+                            h(
+                                "div",
+                                None,
+                                h("span", {"className": "auth-kicker"}, "BIBLIOTECA"),
+                                h("h2", None, "Comece com um workflow pronto"),
+                                h(
+                                    "p",
+                                    None,
+                                    "Escolha uma base, personalize os nós e publique mais rápido.",
+                                ),
+                            ),
+                            h(
+                                "button",
+                                {
+                                    "type": "button",
+                                    "className": "modal-close",
+                                    "id": "template-modal-close",
+                                },
+                                "×",
+                            ),
+                        ),
+                        h(
+                            "div",
+                            {"className": "template-library-toolbar"},
+                            h(
+                                "div",
+                                {"className": "search-box template-search"},
+                                h("span", None, "⌕"),
+                                h(
+                                    "input",
+                                    {
+                                        "id": "template-search",
+                                        "placeholder": "Buscar templates...",
+                                    },
+                                ),
+                            ),
+                            h(
+                                "div",
+                                {"className": "template-filters", "id": "template-filters"},
+                            ),
+                        ),
+                        h(
+                            "div",
+                            {"className": "template-grid", "id": "template-grid"},
+                            h(
+                                "div",
+                                {"className": "template-loading"},
+                                "Carregando biblioteca...",
+                            ),
+                        ),
+                    ),
+                )
+            ]
+            if can_create
+            else []
         ),
     )
 

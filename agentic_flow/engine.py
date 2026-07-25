@@ -11,6 +11,7 @@ import httpx
 from langgraph.graph import END, START, StateGraph
 
 from .catalog import CATALOG_BY_TYPE
+from .media import extract_video_frames, process_image, read_document
 from .models import Node, RunEvent, RunRequest, RunResult, Workflow, utc_now
 
 
@@ -141,6 +142,32 @@ class WorkflowEngine:
                 target = config.get("target", "result")
                 result = render_template(config.get("template", "{{message}}"), data)
                 data[target] = result
+            elif node.type == "file":
+                input_field = config.get("input_field", "file")
+                output_field = config.get("output_field", "document_text")
+                asset = lookup(data, input_field, None)
+                if asset is None:
+                    raise ValueError(f"O campo de arquivo “{input_field}” não foi informado.")
+                result = read_document(asset, config)
+                data[output_field] = result["text"]
+                data[f"{output_field}_metadata"] = result["metadata"]
+            elif node.type == "image":
+                input_field = config.get("input_field", "image")
+                output_field = config.get("output_field", "processed_image")
+                asset = lookup(data, input_field, None)
+                if asset is None:
+                    raise ValueError(f"O campo de imagem “{input_field}” não foi informado.")
+                result = process_image(asset, config)
+                data[output_field] = result
+            elif node.type == "video_frames":
+                input_field = config.get("input_field", "video")
+                output_field = config.get("output_field", "frames")
+                asset = lookup(data, input_field, None)
+                if asset is None:
+                    raise ValueError(f"O campo de vídeo “{input_field}” não foi informado.")
+                result = extract_video_frames(asset, config)
+                data[output_field] = result["frames"]
+                data[f"{output_field}_metadata"] = result["metadata"]
             elif node.type == "condition":
                 actual = lookup(data, config.get("field", ""))
                 expected = config.get("value")

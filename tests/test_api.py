@@ -188,6 +188,40 @@ def test_dashboard_can_create_multiple_empty_workflows(tmp_path):
     assert second.status_code == 201
     names = {workflow["name"] for workflow in client.get("/api/workflows").json()}
     assert {"Equipe de pesquisa", "Atendimento", "Vendas"}.issubset(names)
+    dashboard = client.get("/dashboard")
+    assert 'id="template-library-button"' in dashboard.text
+    assert 'id="template-modal"' in dashboard.text
+    assert "/static/dashboard.js?v=" in dashboard.text
+
+
+def test_workflow_template_library_creates_ready_to_edit_workflow(tmp_path):
+    client = TestClient(create_app(tmp_path / "test.db"))
+    bootstrap(client)
+    templates = client.get("/api/templates")
+    assert templates.status_code == 200
+    by_id = {item["id"]: item for item in templates.json()}
+    assert by_id["document-summary"]["compatible"] is True
+    assert {"file", "agent", "output"}.issubset(
+        by_id["document-summary"]["node_types"]
+    )
+
+    created = client.post(
+        "/api/templates/document-summary/instantiate",
+        json={"name": "Resumidor de contratos"},
+    )
+    assert created.status_code == 201
+    workflow = created.json()
+    assert workflow["name"] == "Resumidor de contratos"
+    assert {node["type"] for node in workflow["nodes"]} >= {
+        "input",
+        "file",
+        "prompt",
+        "agent",
+        "output",
+    }
+    assert client.post(
+        "/api/templates/inexistente/instantiate", json={}
+    ).status_code == 404
 
 
 def test_admin_manages_visual_ai_providers_without_exposing_key(tmp_path):
@@ -405,6 +439,14 @@ def test_manager_creates_team_and_team_policy_controls_user(tmp_path):
         "input",
         "output",
     }
+    templates = {
+        item["id"]: item for item in client.get("/api/templates").json()
+    }
+    assert templates["document-summary"]["compatible"] is False
+    assert "file" in templates["document-summary"]["blocked_node_types"]
+    assert client.post(
+        "/api/templates/document-summary/instantiate", json={}
+    ).status_code == 403
 
     allowed = client.post(
         "/api/workflows",

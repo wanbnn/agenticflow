@@ -18,6 +18,7 @@ from .engine import WorkflowEngine, validate_workflow
 from .models import Edge, Node, Position, RunRequest, Workflow, WorkflowCreate
 from .providers import PROVIDER_TYPES, PROVIDER_TYPE_MAP, ProviderRuntime
 from .store import Store
+from .templates import instantiate_template, template_catalog
 from .ui import (
     render_access_page,
     render_auth_page,
@@ -105,6 +106,10 @@ class TeamPayload(BaseModel):
 
 class TeamMembersPayload(BaseModel):
     user_ids: list[str] = Field(default_factory=list)
+
+
+class TemplateInstantiatePayload(BaseModel):
+    name: str | None = Field(default=None, max_length=120)
 
 
 def sample_workflow() -> WorkflowCreate:
@@ -550,6 +555,47 @@ def create_app(database: str | Path | None = None) -> FastAPI:
     def providers(request: Request):
         _, workspace = auth_context(request)
         return store.list_providers(workspace["id"])
+
+    @app.get("/api/templates")
+    def workflow_templates(request: Request):
+        user, workspace = auth_context(request)
+        permissions = permissions_for(user, workspace)
+        allowed = permissions.get("allowed_node_types")
+        can_create = bool(permissions.get("create_workflows"))
+        result = []
+        for template in template_catalog():
+            blocked = (
+                sorted(set(template["node_types"]) - set(allowed))
+                if allowed is not None
+                else []
+            )
+            result.append(
+                {
+                    **template,
+                    "compatible": can_create and not blocked,
+                    "blocked_node_types": blocked,
+                }
+            )
+        return result
+
+    @app.post("/api/templates/{template_id}/instantiate", status_code=201)
+    def create_from_template(
+        template_id: str,
+        payload: TemplateInstantiatePayload,
+        request: Request,
+    ):
+        user, workspace, permissions = require_permission(
+            request, "create_workflows"
+        )
+        try:
+            workflow = instantiate_template(template_id, payload.name)
+        except KeyError as exc:
+            raise HTTPException(404, "Template não encontrado.") from exc
+        validate_node_access(workflow, permissions)
+        prepared = provision_webhooks(workflow)
+        return store.create_workflow(
+            prepared, workspace["id"], user["id"]
+        )
 
     def provider_values(payload: ProviderPayload) -> tuple[str, str]:
         definition = PROVIDER_TYPE_MAP[payload.type]
