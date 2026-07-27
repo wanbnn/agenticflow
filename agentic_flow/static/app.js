@@ -261,7 +261,7 @@
               .map(
                 (item) => `
                   <div class="catalog-node" draggable="${can("edit_workflows")}" data-node-type="${item.type}">
-                    <span class="catalog-icon" style="--node-color:${item.color}">${item.icon}</span>
+                    <span class="catalog-icon" style="--node-color:${item.color}">${item.icon_svg || escapeHtml(item.icon)}</span>
                     <span>
                       <strong>${escapeHtml(item.name)}</strong>
                       <small>${escapeHtml(item.description)}</small>
@@ -356,7 +356,7 @@
             ${inputHandles}
             ${outputHandles}
             <div class="node-head">
-              <span class="node-icon">${meta.icon}</span>
+              <span class="node-icon">${meta.icon_svg || escapeHtml(meta.icon)}</span>
               <span class="node-copy">
                 <strong>${escapeHtml(node.name)}</strong>
                 <span>${escapeHtml(nodeSummary(node))}</span>
@@ -819,7 +819,7 @@
     const meta = catalogItem(node.type);
     $("#inspector-title").textContent = node.name;
     const avatar = $("#inspector-avatar");
-    avatar.textContent = meta.icon;
+    avatar.innerHTML = meta.icon_svg || escapeHtml(meta.icon);
     avatar.style.setProperty("--node-color", meta.color);
 
     const nameField = `

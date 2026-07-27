@@ -198,6 +198,20 @@ def test_dashboard_can_create_multiple_empty_workflows(tmp_path):
     assert "/static/dashboard.js?v=" in dashboard.text
 
 
+def test_catalog_exposes_6cons_icons_for_dynamic_nodes(tmp_path):
+    client = TestClient(create_app(tmp_path / "catalog-icons.db"))
+    bootstrap(client)
+
+    catalog = client.get("/api/catalog")
+
+    assert catalog.status_code == 200
+    items = catalog.json()
+    assert items
+    assert all(item["icon_name"] for item in items)
+    assert all("lucide-" in item["icon_svg"] for item in items)
+    assert next(item for item in items if item["type"] == "agent")["icon_name"] == "bot"
+
+
 def test_workflow_can_be_deleted_from_dashboard_with_permission(tmp_path):
     client = TestClient(create_app(tmp_path / "delete-workflow.db"))
     setup = bootstrap(client)

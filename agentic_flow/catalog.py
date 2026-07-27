@@ -2,6 +2,9 @@ from __future__ import annotations
 
 from typing import Any
 
+from pyreact.server import render_to_static_markup
+from sixcons import icon as six_icon
+
 from .databases import DATABASE_TYPES
 
 
@@ -545,6 +548,40 @@ def _database_node(definition: dict[str, Any]) -> dict[str, Any]:
 
 
 NODE_CATALOG.extend(_database_node(item) for item in DATABASE_TYPES)
+
+NODE_ICON_NAMES = {
+    "input": "braces",
+    "text_input": "type",
+    "image_input": "image",
+    "video_input": "video",
+    "webhook": "webhook",
+    "prompt": "message-square-code",
+    "llm": "cpu",
+    "agent": "bot",
+    "vector_database": "database-zap",
+    "rag": "search-code",
+    "mcp_server": "plug-zap",
+    "condition": "git-branch",
+    "file": "file-text",
+    "image": "image",
+    "video_frames": "film",
+    "transform": "shuffle",
+    "http": "globe",
+    "memory": "brain",
+    "output": "circle-check",
+}
+
+for item in NODE_CATALOG:
+    icon_name = NODE_ICON_NAMES.get(item["type"], "database")
+    item["icon_name"] = icon_name
+    item["icon_svg"] = render_to_static_markup(
+        six_icon(
+            icon_name,
+            size=18,
+            stroke_width=1.8,
+            class_name="catalog-lucide-icon",
+        )
+    )
 
 
 CATALOG_BY_TYPE = {item["type"]: item for item in NODE_CATALOG}

@@ -10,6 +10,8 @@ receber webhooks e acompanhar cada execução visualmente.
 [![CI](https://github.com/wanbnn/agenticflow/actions/workflows/ci.yml/badge.svg)](https://github.com/wanbnn/agenticflow/actions/workflows/ci.yml)
 [![Python](https://img.shields.io/badge/Python-3.11%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![PyReact](https://img.shields.io/badge/UI-PyReact-7C5CFF)](https://github.com/wanbnn/pyreact)
+[![UIKitPR](https://img.shields.io/badge/Design-UIKitPR-9A82FF)](https://github.com/wanbnn/uikitpr)
+[![6cons](https://img.shields.io/badge/Icons-6cons-7356EE)](https://github.com/wanbnn/6cons)
 [![LangGraph](https://img.shields.io/badge/Agents-LangGraph-1C3C3C)](https://github.com/langchain-ai/langgraph)
 [![FastAPI](https://img.shields.io/badge/API-FastAPI-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
 [![MySQL](https://img.shields.io/badge/Database-MySQL%208.4-4479A1?logo=mysql&logoColor=white)](https://www.mysql.com/)
@@ -174,6 +176,7 @@ O build instala no container:
 
 - Python 3.12 e pip;
 - PyReact;
+- UIKitPR e 6cons;
 - FastAPI e Uvicorn;
 - LangGraph e LangChain Core;
 - SQLAlchemy e PyMySQL;
