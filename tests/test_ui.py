@@ -49,4 +49,9 @@ def test_template_library_has_responsive_grid_and_compact_filters() -> None:
     assert ".template-category-control" in css
     assert ".template-card-description" in css
     assert ".template-setup summary" in css
+    assert "grid-auto-rows: max-content;" in css
+    assert "height: max-content;" in css
+    assert ".template-card > *" in css
+    assert "flex-shrink: 0;" in css
+    assert ".template-setup[open]" in css
     assert ".template-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }" in css

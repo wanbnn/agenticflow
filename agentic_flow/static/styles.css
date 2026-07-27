@@ -1417,6 +1417,8 @@ button { color: inherit; }
   min-height: 0;
   max-height: none;
   align-content: start;
+  align-items: start;
+  grid-auto-rows: max-content;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 16px;
   padding: 22px 24px 28px;
@@ -1426,6 +1428,8 @@ button { color: inherit; }
 .template-card {
   min-width: 0;
   min-height: 300px;
+  height: max-content;
+  align-self: start;
   display: flex;
   flex-direction: column;
   padding: 18px;
@@ -1436,6 +1440,9 @@ button { color: inherit; }
     var(--uipr-surface-raised);
   color: var(--uipr-text);
   box-shadow: var(--uipr-shadow-sm);
+}
+.template-card > * {
+  flex-shrink: 0;
 }
 .template-card::before {
   width: 3px;
@@ -1481,6 +1488,7 @@ button { color: inherit; }
 }
 .template-card-body {
   min-width: 0;
+  flex: 0 0 auto;
 }
 .template-card h3 {
   margin: 18px 0 8px;
@@ -1511,6 +1519,7 @@ button { color: inherit; }
   font-size: 9px;
 }
 .template-card-footer {
+  flex: 0 0 auto;
   min-height: 48px;
   gap: 12px;
   margin-top: auto;
@@ -1530,6 +1539,7 @@ button { color: inherit; }
   color: var(--uipr-muted);
 }
 .template-setup {
+  flex: 0 0 auto;
   margin-top: 10px;
   padding: 0;
   border-color: color-mix(in srgb, var(--uipr-primary) 28%, var(--uipr-border));
@@ -1553,6 +1563,10 @@ button { color: inherit; }
 }
 .template-setup[open] summary {
   padding-bottom: 5px;
+}
+.template-setup[open] {
+  height: auto;
+  overflow: visible;
 }
 .template-setup strong {
   color: var(--uipr-primary-hover);
