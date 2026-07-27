@@ -1061,6 +1061,19 @@ button { color: inherit; }
 }
 
 .agenticflow-ui {
+  --bg: var(--uipr-background);
+  --panel: var(--uipr-surface);
+  --panel-2: var(--uipr-surface-raised);
+  --panel-3: color-mix(in srgb, var(--uipr-surface-raised) 82%, white 6%);
+  --line: var(--uipr-border);
+  --line-soft: color-mix(in srgb, var(--uipr-border) 64%, transparent);
+  --text: var(--uipr-text);
+  --muted: var(--uipr-muted);
+  --muted-2: color-mix(in srgb, var(--uipr-muted) 72%, transparent);
+  --purple: var(--uipr-primary);
+  --purple-2: var(--uipr-primary-hover);
+  --green: var(--uipr-success);
+  --red: var(--uipr-danger);
   height: 100%;
   min-height: 100%;
   isolation: isolate;
@@ -1232,6 +1245,24 @@ button { color: inherit; }
 .workflow-card, .provider-card {
   transition: transform .2s ease, border-color .2s ease, box-shadow .2s ease;
 }
+.workflow-card-link,
+.workflow-card h2,
+.workflow-card .version-pill {
+  color: var(--uipr-text);
+}
+.workflow-card p {
+  color: var(--uipr-muted);
+}
+.workflow-meta {
+  border-color: var(--uipr-border);
+  color: color-mix(in srgb, var(--uipr-muted) 88%, white 6%);
+}
+.new-card {
+  color: var(--uipr-muted);
+}
+.new-card strong {
+  color: var(--uipr-text);
+}
 .workflow-card:hover, .provider-card:hover {
   border-color: color-mix(in srgb, var(--uipr-primary) 42%, var(--uipr-border));
   box-shadow: var(--uipr-shadow);
@@ -1288,6 +1319,213 @@ button { color: inherit; }
   box-shadow: var(--uipr-shadow-lg);
 }
 
+/* Template library: stable desktop/tablet/mobile layout and readable type. */
+.template-library-modal {
+  width: min(1180px, calc(100vw - 48px));
+  height: min(780px, calc(100vh - 48px));
+  max-height: none;
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  border-color: var(--uipr-border);
+  border-radius: 20px;
+  background: var(--uipr-surface);
+  color: var(--uipr-text);
+}
+.template-library-head {
+  padding: 28px 30px 22px;
+  border-color: var(--uipr-border);
+  background:
+    radial-gradient(circle at 82% 0, rgba(154,130,255,.16), transparent 36%),
+    var(--uipr-surface);
+}
+.template-library-head h2 {
+  margin: 9px 0 6px;
+  color: var(--uipr-text);
+  font-size: 25px;
+  line-height: 1.2;
+}
+.template-library-head p {
+  color: var(--uipr-muted);
+  font-size: 12px;
+}
+.template-library-head .modal-close {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+}
+.template-library-head .modal-close:hover {
+  background: var(--uipr-primary-soft);
+  color: var(--uipr-primary-hover);
+}
+.template-library-toolbar {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 250px minmax(0, 1fr);
+  gap: 16px;
+  padding: 16px 22px;
+  border-color: var(--uipr-border);
+  background: color-mix(in srgb, var(--uipr-background) 45%, var(--uipr-surface));
+}
+.template-search {
+  width: 100%;
+  height: 42px;
+}
+.template-filters {
+  min-width: 0;
+  gap: 7px;
+  padding: 1px 2px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.template-filters::-webkit-scrollbar {
+  display: none;
+}
+.template-filter {
+  height: 40px;
+  padding: 0 13px;
+  border-color: transparent;
+  border-radius: 10px;
+  color: var(--uipr-muted);
+  font-size: 11px;
+  font-weight: 600;
+}
+.template-filter:hover {
+  background: var(--uipr-surface-raised);
+  color: var(--uipr-text);
+}
+.template-filter.active {
+  border-color: color-mix(in srgb, var(--uipr-primary) 48%, var(--uipr-border));
+  background: var(--uipr-primary-soft);
+  color: var(--uipr-primary-hover);
+}
+.template-grid {
+  min-height: 0;
+  max-height: none;
+  align-content: start;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+  padding: 22px 24px 28px;
+  overflow-y: auto;
+  scrollbar-color: color-mix(in srgb, var(--uipr-primary) 38%, var(--uipr-border)) transparent;
+}
+.template-card {
+  min-width: 0;
+  min-height: 292px;
+  padding: 18px;
+  border-color: var(--uipr-border);
+  border-radius: 15px;
+  background:
+    linear-gradient(145deg, rgba(255,255,255,.03), transparent 35%),
+    var(--uipr-surface-raised);
+  color: var(--uipr-text);
+  box-shadow: var(--uipr-shadow-sm);
+}
+.template-card::before {
+  width: 3px;
+  border-radius: 15px 0 0 15px;
+}
+.template-card:hover {
+  border-color: color-mix(in srgb, var(--template-color) 48%, var(--uipr-border));
+  box-shadow: var(--uipr-shadow);
+}
+.template-card-head {
+  min-height: 42px;
+  gap: 12px;
+}
+.template-icon {
+  width: 42px;
+  height: 42px;
+  flex: 0 0 42px;
+  border: 1px solid color-mix(in srgb, var(--template-color) 32%, var(--uipr-border));
+  border-radius: 11px;
+  background: color-mix(in srgb, var(--template-color) 17%, var(--uipr-surface-raised));
+  font-size: 10px;
+}
+.template-badges {
+  min-width: 0;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.template-category,
+.template-featured {
+  padding: 4px 8px;
+  border-radius: 999px;
+  font-size: 9px;
+  line-height: 1.2;
+}
+.template-category {
+  border-color: var(--uipr-border);
+  color: var(--uipr-muted);
+}
+.template-featured {
+  background: var(--uipr-primary-soft);
+  color: var(--uipr-primary-hover);
+}
+.template-card h3 {
+  margin: 18px 0 8px;
+  color: var(--uipr-text);
+  font-size: 15px;
+  line-height: 1.3;
+}
+.template-card > p {
+  height: 52px;
+  color: var(--uipr-muted);
+  font-size: 11px;
+  line-height: 1.55;
+}
+.template-tags {
+  gap: 6px;
+  margin-top: 14px;
+}
+.template-tags span {
+  padding: 4px 7px;
+  border: 1px solid color-mix(in srgb, var(--uipr-border) 72%, transparent);
+  background: color-mix(in srgb, var(--uipr-background) 58%, transparent);
+  color: var(--uipr-muted);
+  font-size: 9px;
+}
+.template-card-footer {
+  min-height: 48px;
+  gap: 12px;
+  margin-top: 16px;
+  padding-top: 13px;
+  border-color: var(--uipr-border);
+  color: var(--uipr-muted);
+  font-size: 10px;
+}
+.template-card-footer .compact {
+  height: 36px;
+  min-height: 36px;
+  padding: 0 13px;
+  color: white;
+  font-size: 10px;
+}
+.template-card-footer .secondary.compact {
+  color: var(--uipr-muted);
+}
+.template-setup {
+  margin-top: 10px;
+  padding: 9px 10px;
+  border-color: color-mix(in srgb, var(--uipr-primary) 28%, var(--uipr-border));
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--uipr-primary-soft) 34%, transparent);
+  color: var(--uipr-muted);
+  font-size: 9px;
+  line-height: 1.5;
+}
+.template-setup strong {
+  color: var(--uipr-primary-hover);
+}
+.template-blocked {
+  color: var(--uipr-danger);
+  font-size: 9px;
+}
+
+@media (max-width: 1100px) {
+  .template-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
 @media (max-width: 980px) {
   :root { --sidebar: 260px; --inspector: 300px; }
   .dashboard-main { width: 100%; }
@@ -1297,6 +1535,24 @@ button { color: inherit; }
   .agenticflow-ui { min-height: 100dvh; }
   .topbar, .dashboard-topbar { backdrop-filter: blur(16px); }
   .workflow-card, .provider-card, .access-panel { border-radius: 14px; }
+  .template-library-modal {
+    width: calc(100vw - 24px);
+    height: calc(100dvh - 24px);
+    border-radius: 16px;
+  }
+  .template-library-head { padding: 22px 20px 17px; }
+  .template-library-head h2 { font-size: 21px; }
+  .template-library-toolbar {
+    grid-template-columns: 1fr;
+    gap: 10px;
+    padding: 12px 16px;
+  }
+  .template-filters { width: 100%; }
+  .template-grid {
+    grid-template-columns: 1fr;
+    gap: 14px;
+    padding: 16px;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
