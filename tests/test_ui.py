@@ -42,9 +42,11 @@ def test_dashboard_contrast_uses_tokens_inside_provider_scope() -> None:
     assert "color: var(--uipr-text);" in css
 
 
-def test_template_library_has_responsive_grid_without_native_scrollbar() -> None:
+def test_template_library_has_responsive_grid_and_compact_filters() -> None:
     css = STYLESHEET.read_text(encoding="utf-8")
 
     assert "grid-template-rows: auto auto minmax(0, 1fr);" in css
-    assert ".template-filters::-webkit-scrollbar" in css
+    assert ".template-category-control" in css
+    assert ".template-card-description" in css
+    assert ".template-setup summary" in css
     assert ".template-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }" in css

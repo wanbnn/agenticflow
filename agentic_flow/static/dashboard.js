@@ -126,6 +126,8 @@
 
   const templateModal = document.querySelector("#template-modal");
   const templateGrid = document.querySelector("#template-grid");
+  const templateCategorySelect = document.querySelector("#template-category");
+  const templateResultCount = document.querySelector("#template-result-count");
   let templates = [];
   let templateCategory = "Todos";
 
@@ -141,6 +143,11 @@
           .toLowerCase()
           .includes(query)
     );
+    if (templateResultCount) {
+      templateResultCount.textContent = `${visible.length} ${
+        visible.length === 1 ? "template" : "templates"
+      }`;
+    }
     templateGrid.innerHTML = visible.length
       ? visible
           .map(
@@ -154,11 +161,26 @@
                     <span class="template-category">${escapeHtml(template.category)}</span>
                   </div>
                 </div>
-                <h3>${escapeHtml(template.name)}</h3>
-                <p>${escapeHtml(template.description)}</p>
-                <div class="template-tags">
-                  ${template.tags.map((tag) => `<span>${escapeHtml(tag)}</span>`).join("")}
+                <div class="template-card-body">
+                  <h3>${escapeHtml(template.name)}</h3>
+                  <p class="template-card-description">${escapeHtml(template.description)}</p>
+                  <div class="template-tags">
+                    ${template.tags.map((tag) => `<span>${escapeHtml(tag)}</span>`).join("")}
+                  </div>
                 </div>
+                ${
+                  template.setup_hint
+                    ? `<details class="template-setup">
+                        <summary>Antes de executar</summary>
+                        <p>${escapeHtml(template.setup_hint)}</p>
+                      </details>`
+                    : ""
+                }
+                ${
+                  template.blocked_node_types.length
+                    ? `<small class="template-blocked">Nós bloqueados: ${template.blocked_node_types.join(", ")}</small>`
+                    : ""
+                }
                 <div class="template-card-footer">
                   <span>${template.nodes_count} nós</span>
                   <button class="button ${template.compatible ? "primary" : "secondary"} compact"
@@ -167,16 +189,6 @@
                     ${template.compatible ? "Usar template" : "Sem permissão"}
                   </button>
                 </div>
-                ${
-                  template.setup_hint
-                    ? `<small class="template-setup"><strong>Antes de executar:</strong> ${escapeHtml(template.setup_hint)}</small>`
-                    : ""
-                }
-                ${
-                  template.blocked_node_types.length
-                    ? `<small class="template-blocked">Nós bloqueados: ${template.blocked_node_types.join(", ")}</small>`
-                    : ""
-                }
               </article>`
           )
           .join("")
@@ -196,11 +208,10 @@
           left.name.localeCompare(right.name, "pt-BR")
       );
       const categories = ["Todos", ...new Set(templates.map((item) => item.category))];
-      document.querySelector("#template-filters").innerHTML = categories
+      templateCategorySelect.innerHTML = categories
         .map(
           (category) =>
-            `<button type="button" class="template-filter ${category === "Todos" ? "active" : ""}"
-              data-template-category="${escapeHtml(category)}">${escapeHtml(category)}</button>`
+            `<option value="${escapeHtml(category)}">${escapeHtml(category)}</option>`
         )
         .join("");
       renderTemplates();
@@ -219,14 +230,14 @@
     if (event.target === templateModal) templateModal.classList.add("hidden");
   });
   document.querySelector("#template-search")?.addEventListener("input", renderTemplates);
-  document.querySelector("#template-filters")?.addEventListener("click", (event) => {
-    const filter = event.target.closest("[data-template-category]");
-    if (!filter) return;
-    templateCategory = filter.dataset.templateCategory;
-    document.querySelectorAll("[data-template-category]").forEach((item) =>
-      item.classList.toggle("active", item === filter)
-    );
+  templateCategorySelect?.addEventListener("change", () => {
+    templateCategory = templateCategorySelect.value;
     renderTemplates();
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && !templateModal?.classList.contains("hidden")) {
+      templateModal.classList.add("hidden");
+    }
   });
   templateGrid?.addEventListener("click", async (event) => {
     const button = event.target.closest("[data-use-template]");

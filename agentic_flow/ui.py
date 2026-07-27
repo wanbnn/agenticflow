@@ -910,8 +910,27 @@ def Dashboard(props):
                                 ),
                             ),
                             h(
-                                "div",
-                                {"className": "template-filters", "id": "template-filters"},
+                                "label",
+                                {"className": "template-category-control"},
+                                Icon("tags", 16),
+                                h("span", None, "Categoria"),
+                                h(
+                                    "select",
+                                    {
+                                        "id": "template-category",
+                                        "aria-label": "Filtrar por categoria",
+                                    },
+                                    h("option", {"value": "Todos"}, "Todos"),
+                                ),
+                            ),
+                            h(
+                                "span",
+                                {
+                                    "className": "template-result-count",
+                                    "id": "template-result-count",
+                                    "aria-live": "polite",
+                                },
+                                "Carregando...",
                             ),
                         ),
                         h(

@@ -195,6 +195,8 @@ def test_dashboard_can_create_multiple_empty_workflows(tmp_path):
     dashboard = client.get("/dashboard")
     assert 'id="template-library-button"' in dashboard.text
     assert 'id="template-modal"' in dashboard.text
+    assert 'id="template-category"' in dashboard.text
+    assert 'id="template-result-count"' in dashboard.text
     assert "/static/dashboard.js?v=" in dashboard.text
 
 
