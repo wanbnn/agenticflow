@@ -3,11 +3,20 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "agentic-flow"
-version = "0.2.0"
-description = "Editor visual low-code para agentes de IA com PyReact e LangGraph"
+name = "agenticflow-studio"
+version = "0.3.0"
+description = "Plataforma visual self-hosted para agentes e modelos locais de IA"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.12,<3.13"
+license = "MIT"
+authors = [{name = "wanbnn"}]
+keywords = ["agents", "llm", "workflow", "huggingface", "rocm", "cuda", "self-hosted"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
 dependencies = [
     "fastapi>=0.115",
     "uvicorn[standard]>=0.30",
@@ -47,6 +56,16 @@ self-hosted = [
     "soundfile>=0.13",
     "trimesh>=4.7",
 ]
+self-hosted-runtime = [
+    "huggingface-hub>=0.34",
+    "transformers==5.14.1",
+    "accelerate>=1.9",
+    "diffusers>=0.34",
+    "safetensors>=0.5",
+    "sentencepiece>=0.2",
+    "soundfile>=0.13",
+    "trimesh>=4.7",
+]
 rocm = [
     "rocm==7.14.0",
     "rocm-bootstrap==0.1.0",
@@ -58,7 +77,14 @@ rocm = [
 ]
 
 [project.scripts]
-agentic-flow = "agentic_flow.main:run"
+agenticflow = "agentic_flow.cli:main"
+agentic-flow = "agentic_flow.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/wanbnn/agenticflow"
+Repository = "https://github.com/wanbnn/agenticflow"
+Issues = "https://github.com/wanbnn/agenticflow/issues"
+Changelog = "https://github.com/wanbnn/agenticflow/blob/main/CHANGELOG.md"
 
 [tool.setuptools.packages.find]
 include = ["agentic_flow*"]

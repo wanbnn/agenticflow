@@ -216,6 +216,7 @@ class ProviderRuntime:
         instructions: str,
         prompt: str,
         temperature: float,
+        usage_scope: str = "",
     ) -> str:
         provider = self.store.get_provider(provider_id, workspace_id, include_secret=True)
         if not provider or not provider["enabled"]:
@@ -239,6 +240,7 @@ class ProviderRuntime:
                 instructions=instructions,
                 prompt=prompt,
                 temperature=temperature,
+                usage_scope=usage_scope,
             )
 
         if definition["protocol"] == "anthropic":

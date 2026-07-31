@@ -7,6 +7,29 @@ projeto adota [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
 ## [Não lançado]
 
+## [0.3.0] - 2026-07-31
+
+### Adicionado
+
+- distribuição `agenticflow-studio` no PyPI e comando `agenticflow`;
+- instalador PowerShell baseado em pipx;
+- detecção automática e instalação de CUDA, ROCm, MPS ou CPU;
+- instalação oficial do llama.cpp adequada à GPU;
+- biblioteca Hugging Face paginada, modelos GGUF e seletor de quantização;
+- runtimes locais para LLM, visão, áudio, imagem, vídeo e 3D.
+
+### Alterado
+
+- SQLite passa a ser o único banco interno da aplicação, sem servidor externo;
+- drivers MySQL, PostgreSQL, SQL Server e BigQuery continuam disponíveis para nós;
+- dados da instalação PyPI ficam no diretório de aplicação do usuário.
+
+### Corrigido
+
+- fila exclusiva e descarregamento sincronizado de modelos locais;
+- adaptação de snapshots MLX/CoreML e pipelines Diffusers experimentais;
+- entradas multimodais, previews no canvas e roteamento automático entre nós.
+
 ### Adicionado
 
 - runtime self-hosted para LLM, visão, áudio, imagem, 3D e embeddings;

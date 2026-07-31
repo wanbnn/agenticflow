@@ -4,7 +4,6 @@ import os
 import secrets
 from pathlib import Path
 from typing import Any, Literal
-from urllib.parse import quote_plus
 
 import uvicorn
 from fastapi import BackgroundTasks, FastAPI, HTTPException, Query, Request, Response
@@ -16,8 +15,15 @@ from starlette.middleware.sessions import SessionMiddleware
 from .catalog import NODE_CATALOG
 from .databases import DATABASE_TYPES, DATABASE_TYPE_MAP, DatabaseRuntime
 from .engine import WorkflowEngine, validate_workflow
-from .local_models import LOCAL_MODEL_TASK_NAMES, LOCAL_MODEL_TASKS, LocalModelRuntime
+from .local_models import (
+    LOCAL_MODEL_SORTS,
+    LOCAL_MODEL_TASK_NAMES,
+    LOCAL_MODEL_TASKS,
+    LocalModelRuntime,
+)
+from .media import MAX_ASSET_BYTES
 from .models import Edge, Node, Position, RunRequest, Workflow, WorkflowCreate
+from .paths import default_data_dir
 from .providers import PROVIDER_TYPES, PROVIDER_TYPE_MAP, ProviderRuntime
 from .store import Store
 from .templates import instantiate_template, template_catalog
@@ -32,7 +38,7 @@ from .ui import (
 
 
 PACKAGE_DIR = Path(__file__).resolve().parent
-DATA_DIR = Path(os.getenv("AGENTIC_FLOW_DATA_DIR", PACKAGE_DIR.parent / "data"))
+DATA_DIR = default_data_dir()
 
 
 class SetupPayload(BaseModel):
@@ -98,6 +104,12 @@ class LocalModelPayload(BaseModel):
 class LocalInferencePayload(BaseModel):
     input: Any
     parameters: dict[str, Any] = Field(default_factory=dict)
+
+
+class GGUFVariantsPayload(BaseModel):
+    repository_id: str = Field(min_length=2, max_length=255)
+    revision: str = Field(default="main", min_length=1, max_length=160)
+    token: str = Field(default="", max_length=1000)
 
 
 class DatabaseConnectionPayload(BaseModel):
@@ -228,16 +240,10 @@ def sample_workflow() -> WorkflowCreate:
 
 
 def database_from_environment() -> str:
-    if os.getenv("DATABASE_URL"):
-        return os.environ["DATABASE_URL"]
-    if os.getenv("DB_HOST"):
-        user = quote_plus(os.getenv("DB_USER", "agentic"))
-        password = quote_plus(os.getenv("DB_PASSWORD", ""))
-        host = os.getenv("DB_HOST", "mysql")
-        port = os.getenv("DB_PORT", "3306")
-        name = os.getenv("DB_NAME", "agentic_flow")
-        return f"mysql+pymysql://{user}:{password}@{host}:{port}/{name}?charset=utf8mb4"
-    return str(DATA_DIR / "agentic-flow-v2.db")
+    configured = os.getenv("AGENTIC_FLOW_SQLITE_PATH", "").strip()
+    return str(Path(configured).expanduser().resolve()) if configured else str(
+        DATA_DIR / "agentic-flow-v2.db"
+    )
 
 
 def create_app(database: str | Path | None = None) -> FastAPI:
@@ -435,6 +441,7 @@ def create_app(database: str | Path | None = None) -> FastAPI:
             "workspace": workspace,
             "workspaces": store.list_workspaces(user["id"]),
             "permissions": permissions_for(user, workspace),
+            "runtime": {"max_asset_bytes": MAX_ASSET_BYTES},
         }
 
     @app.post("/api/auth/workspace/{workspace_id}")
@@ -635,23 +642,55 @@ def create_app(database: str | Path | None = None) -> FastAPI:
     @app.get("/api/local-models")
     def local_models(request: Request):
         _, workspace = auth_context(request)
-        return store.list_local_models(workspace["id"])
+        return [
+            local_runtime.describe_model(model)
+            for model in store.list_local_models(workspace["id"])
+        ]
 
     @app.get("/api/local-models/hardware")
     def local_model_hardware(request: Request):
         auth_context(request)
         return local_runtime.hardware()
 
+    @app.get("/api/llama-cpp/status")
+    def llama_cpp_status(request: Request):
+        auth_context(request)
+        return local_runtime.llama_cpp.status()
+
+    @app.post("/api/llama-cpp/install")
+    def install_llama_cpp(request: Request):
+        require_admin(request)
+        try:
+            return local_runtime.llama_cpp.install()
+        except Exception as exc:
+            raise HTTPException(422, str(exc)) from exc
+
     @app.get("/api/huggingface/models")
     def search_huggingface_models(
         request: Request,
         q: str = Query(default="", max_length=200),
         task: str = Query(default="", max_length=80),
-        limit: int = Query(default=20, ge=1, le=50),
+        page: int = Query(default=1, ge=1, le=500),
+        per_page: int = Query(default=18, ge=1, le=48),
+        sort: str = Query(default="trending", max_length=20),
     ):
         require_admin(request)
+        if task and task not in LOCAL_MODEL_TASK_NAMES:
+            raise HTTPException(422, "Modalidade de modelo desconhecida.")
+        if sort not in LOCAL_MODEL_SORTS:
+            raise HTTPException(422, "Ordenação de modelos desconhecida.")
         try:
-            return local_runtime.search(q, task, limit)
+            return local_runtime.search(q, task, page, per_page, sort)
+        except Exception as exc:
+            raise HTTPException(422, str(exc)) from exc
+
+    @app.post("/api/huggingface/gguf-variants")
+    def huggingface_gguf_variants(payload: GGUFVariantsPayload, request: Request):
+        require_admin(request)
+        try:
+            return local_runtime.gguf_variants(
+                payload.repository_id, payload.revision, payload.token
+            )
         except Exception as exc:
             raise HTTPException(422, str(exc)) from exc
 
@@ -662,6 +701,24 @@ def create_app(database: str | Path | None = None) -> FastAPI:
         background_tasks: BackgroundTasks,
     ):
         _, workspace = require_admin(request)
+        existing = store.find_local_model(
+            workspace["id"],
+            payload.repository_id,
+            payload.revision,
+            payload.task,
+        )
+        if existing:
+            if payload.download and existing["status"] == "error":
+                existing = store.update_local_model(
+                    existing["id"], workspace["id"], status="installing"
+                )
+                background_tasks.add_task(
+                    local_runtime.install,
+                    existing["id"],
+                    workspace["id"],
+                    payload.token,
+                )
+            return local_runtime.describe_model(existing)
         try:
             model = store.create_local_model(
                 workspace_id=workspace["id"],
@@ -677,7 +734,7 @@ def create_app(database: str | Path | None = None) -> FastAPI:
             background_tasks.add_task(
                 local_runtime.install, model["id"], workspace["id"], payload.token
             )
-        return model
+        return local_runtime.describe_model(model)
 
     @app.post("/api/local-models/{model_id}/infer")
     def infer_local_model(
@@ -1007,6 +1064,16 @@ def create_app(database: str | Path | None = None) -> FastAPI:
         store.save_run(result, workspace["id"])
         return result
 
+    @app.post("/api/workflows/{workflow_id}/release-models")
+    def release_workflow_models(workflow_id: str, request: Request):
+        _, workspace = auth_context(request)
+        if not store.get_workflow(workflow_id, workspace["id"]):
+            raise HTTPException(404, "Workflow não encontrado.")
+        return {
+            "workflow_id": workflow_id,
+            "unloaded": local_runtime.release_scope(workflow_id),
+        }
+
     @app.get("/api/workflows/{workflow_id}/runs")
     def workflow_runs(workflow_id: str, request: Request, limit: int = 20):
         _, workspace = auth_context(request)
@@ -1068,7 +1135,12 @@ app = create_app()
 
 
 def run() -> None:
-    uvicorn.run("agentic_flow.main:app", host="0.0.0.0", port=16777, reload=False)
+    uvicorn.run(
+        "agentic_flow.main:app",
+        host=os.getenv("AGENTIC_FLOW_HOST", "0.0.0.0"),
+        port=int(os.getenv("AGENTIC_FLOW_PORT", "16777")),
+        reload=False,
+    )
 
 
 if __name__ == "__main__":

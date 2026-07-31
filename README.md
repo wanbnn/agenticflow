@@ -8,19 +8,20 @@ Uma plataforma low-code para construir workflows multiagente, integrar modelos,
 receber webhooks e acompanhar cada execução visualmente.
 
 [![CI](https://github.com/wanbnn/agenticflow/actions/workflows/ci.yml/badge.svg)](https://github.com/wanbnn/agenticflow/actions/workflows/ci.yml)
-[![Python](https://img.shields.io/badge/Python-3.11%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
+[![Python](https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![PyReact](https://img.shields.io/badge/UI-PyReact-7C5CFF)](https://github.com/wanbnn/pyreact)
 [![UIKitPR](https://img.shields.io/badge/Design-UIKitPR-9A82FF)](https://github.com/wanbnn/uikitpr)
 [![6cons](https://img.shields.io/badge/Icons-6cons-7356EE)](https://github.com/wanbnn/6cons)
 [![LangGraph](https://img.shields.io/badge/Agents-LangGraph-1C3C3C)](https://github.com/langchain-ai/langgraph)
 [![FastAPI](https://img.shields.io/badge/API-FastAPI-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
-[![MySQL](https://img.shields.io/badge/Database-MySQL%208.4-4479A1?logo=mysql&logoColor=white)](https://www.mysql.com/)
+[![PyPI](https://img.shields.io/pypi/v/agenticflow-studio?logo=pypi)](https://pypi.org/project/agenticflow-studio/)
+[![SQLite](https://img.shields.io/badge/Internal_DB-SQLite-003B57?logo=sqlite)](https://sqlite.org/)
 [![Docker](https://img.shields.io/badge/Deploy-Docker-2496ED?logo=docker&logoColor=white)](https://www.docker.com/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![GitHub stars](https://img.shields.io/github/stars/wanbnn/agenticflow?style=flat&logo=github)](https://github.com/wanbnn/agenticflow/stargazers)
 [![GitHub issues](https://img.shields.io/github/issues/wanbnn/agenticflow)](https://github.com/wanbnn/agenticflow/issues)
 
-[Início rápido](#-início-rápido-com-docker) ·
+[Início rápido](#-instalação) ·
 [Recursos](#-recursos) ·
 [Arquitetura](#-arquitetura) ·
 [Contribuir](CONTRIBUTING.md) ·
@@ -45,6 +46,12 @@ programa.
 - Administre múltiplos workspaces e libere usuários em cada ambiente.
 - Organize usuários em times com políticas de workflows, execução, provedores e tipos de nó.
 
+As conexões transportam os dados automaticamente entre os nós. O runtime dá
+prioridade à saída do nó conectado, reconhece texto, imagem, áudio, vídeo e
+arquivos pelo conteúdo e cria os aliases necessários. Os nomes técnicos de
+entrada e saída no inspetor são opcionais e servem apenas para sobrescrever o
+comportamento automático em integrações avançadas.
+
 ## ✨ Recursos
 
 | Área | Capacidades |
@@ -56,7 +63,7 @@ programa.
 | Conhecimento | Banco de Vetores nativo por nó, ingestão persistente, busca semântica local e RAG conectado a agentes |
 | Provedores | OpenAI, Anthropic, Ollama, Hugging Face local, Groq, OpenRouter, Gemini, Mistral e APIs compatíveis |
 | Segurança | RBAC Admin/Manager/User, multi-workspace, times, políticas, sessões assinadas e credenciais criptografadas |
-| Operação | MySQL, histórico de runs, healthcheck, volumes Docker e API OpenAPI em `/docs` |
+| Operação | SQLite interno, histórico de runs, healthcheck, volumes Docker e API OpenAPI em `/docs` |
 | Integrações | Webhooks persistentes e requisições HTTP para serviços externos |
 
 ### Arquivos e mídia
@@ -82,37 +89,113 @@ O limite padrão por asset é 25 MB e pode ser alterado com
 ### Inferência self-hosted e Hugging Face
 
 Em **Configurações → Provedores de IA → Modelos Hugging Face locais**, o
-administrador pesquisa o Hub ou informa qualquer `repository_id`, escolhe a
-modalidade e instala o snapshot no volume persistente. O token informado para
-um modelo privado é usado somente durante o download e não é armazenado.
+administrador encontra uma biblioteca organizada por modalidade, pesquisa o
+Hub e instala diretamente pelo cartão do modelo. A interface mostra
+popularidade, tendência, tamanho estimado e compatibilidade com a GPU/CPU
+local. O catálogo é paginado e pode ser ordenado por modelos em alta,
+downloads, curtidas ou atualização recente; task, revisão, backend e pacotes
+são resolvidos pelo AgenticFlow. A instalação por `repository_id` continua
+disponível como opção avançada. O token informado para um modelo privado é
+usado somente durante o download e não é armazenado.
+
+Repositórios **GGUF** abrem um seletor de quantização antes da instalação. A
+biblioteca agrupa automaticamente arquivos divididos em shards, exibe o
+tamanho real de cada variante e destaca Q4/Q5 como equilíbrio recomendado. O
+AgenticFlow baixa somente a variante escolhida e, quando disponível, permite
+incluir o `mmproj` necessário para entrada de imagem.
+
+O `start.bat` instala automaticamente o binário oficial mais recente do
+`llama.cpp` em `data/llama.cpp`. A GPU é detectada sem configuração manual:
+AMD usa HIP/ROCm, NVIDIA usa CUDA e inclui o runtime CUDA correspondente,
+outros GPUs tentam Vulkan e máquinas sem GPU usam CPU. Modelos GGUF rodam em
+um processo `llama-server` isolado, mantendo a fila e a regra de somente um
+modelo local ativo. Isso impede que uma falha nativa do runtime derrube o
+servidor web do AgenticFlow.
+
+O backend GGUF/llama.cpp é destinado a LLMs e modelos multimodais compatíveis
+que recebem texto e, com `mmproj`, imagem. Geração de imagem, vídeo, áudio e 3D
+continua no runtime PyTorch/Diffusers da aplicação; esses modelos não são
+convertidos para llama.cpp.
+
+Snapshots que declaram implementações próprias por `auto_map` são detectados
+automaticamente. Nesses casos, o runtime habilita `trust_remote_code` para os
+arquivos já baixados no diretório local do modelo, sem exigir configuração no
+nó ou no workflow.
+
+Para pipelines de imagem e 3D, a instalação valida a presença de
+`model_index.json`. Quando o repositório escolhido contém somente checkpoints
+de treinamento, o AgenticFlow procura automaticamente uma variante
+`_diffusers` ou `-diffusers`; modelos sem formato executável permanecem em erro
+com uma orientação clara, em vez de serem marcados incorretamente como prontos.
+
+Um `model_index.json` isolado não é considerado suficiente: conversões MLX e
+CoreML destinadas a Apple não são carregadas como se fossem PyTorch. Quando o
+repositório declara `base_model`, o AgenticFlow baixa automaticamente a
+variante Diffusers compatível. Classes experimentais conhecidas, como
+`WanDMDPipeline`, são adaptadas para o pipeline Wan disponível e adequado à
+tarefa. Ao alternar modelos locais, o runtime aguarda os kernels ROCm/CUDA,
+remove o pipeline anterior e limpa o cache da GPU antes do próximo carregamento.
 
 O nó **Modelo local multimodal** executa no servidor modelos de geração de
 texto, visão, reconhecimento e síntese de áudio, geração de imagem, 3D e
 embeddings. Um modelo de `text-generation` também pode ser selecionado como
 modelo padrão de um provedor **Hugging Face local**, permitindo reutilizá-lo
 nos nós LLM e Agente. Os pipelines são carregados sob demanda, mantidos em
-cache e podem ser descarregados pela API para liberar VRAM.
+cache e descarregados automaticamente ao sair do workflow ou após 60 segundos
+sem inferência, liberando RAM/VRAM. O intervalo pode ser configurado por
+`AGENTIC_FLOW_MODEL_IDLE_SECONDS`.
+
+A biblioteca e o seletor do nó exibem capacidades como **Aceita imagem**,
+**Aceita texto**, **Retorna texto** e **Gera imagem**. Modelos
+`image-text-to-text` aparecem em **LLMs multimodais**. Ao conectar a saída de
+um gerador de imagem a um desses modelos, o AgenticFlow extrai a imagem,
+adiciona a instrução de avaliação configurada no nó e usa o processor visual
+correto. Modelos somente-texto ficam desabilitados nessa conexão para evitar o
+envio acidental de base64 como prompt.
+
+Quando o processor oferece chat template multimodal, a imagem é inserida como
+bloco `{type: image}` na mensagem. Isso permite que templates Qwen VL, LLaVA,
+Mllama e compatíveis criem automaticamente seus tokens visuais; pipelines de
+caption sem chat template continuam recebendo `images` e `text` separadamente.
+
+Inferências self-hosted passam por uma fila FIFO exclusiva. Somente um modelo
+local permanece carregado por vez: quando o próximo item da fila usa outro
+modelo, o pipeline anterior é removido da RAM/VRAM antes do carregamento. Essa
+serialização não se aplica a providers por API, que continuam executando com a
+concorrência normal do grafo.
+
+No Windows com ROCm, o launcher usa Python 3.12, desativa kernels SDP
+experimentais e habilita o caminho matemático estável. O descarregamento remove
+diretamente as referências da GPU, sem copiar pesos para a RAM. Se o driver
+ainda encerrar nativamente o processo, `start.bat` recupera o servidor com um
+limite de três tentativas para evitar um ciclo de falhas.
 
 Para desenvolvimento local em CPU/CUDA, instale `pip install -e
-".[self-hosted]"`. Em uma máquina AMD, configure o índice Python ROCm 7.14 da
-AMD e use `pip install -r requirements-amd-rocm.txt`; esse lock inclui PyTorch
-2.12, TorchVision 0.27, TorchAudio 2.11 e os pacotes `gfx` informados para cada
-arquitetura. O endpoint `GET /api/local-models/hardware` mostra o backend, a
-versão HIP/ROCm e as GPUs que o processo realmente detectou.
+".[self-hosted]"`. No Windows, `start.bat` detecta automaticamente GPUs AMD por
+`clinfo`, `hipInfo` ou `rocminfo`, resolve uma ou mais arquiteturas `gfx` e usa
+o índice ROCm 7.14 da AMD. Se a placa for AMD mas a arquitetura ainda for
+desconhecida, usa `device-all`. A instalação só é marcada como pronta depois
+que PyTorch confirma HIP e acesso real à GPU. O endpoint
+`GET /api/local-models/hardware` mostra o backend, a versão HIP/ROCm e as GPUs
+que o processo detectou.
 
 Endpoints principais:
 
 - `GET /api/huggingface/models` pesquisa o Hub;
+- `POST /api/huggingface/gguf-variants` lista quantizações e arquivos `mmproj`;
+- `GET /api/llama-cpp/status` mostra backend, versão e processo ativo;
+- `POST /api/llama-cpp/install` instala o runtime oficial sob demanda;
 - `POST /api/local-models` registra e baixa um modelo;
 - `POST /api/local-models/{id}/infer` executa inferência multimodal;
 - `POST /api/local-models/{id}/unload` libera RAM/VRAM;
+- `POST /api/workflows/{id}/release-models` libera os modelos usados pelo workflow;
 - `DELETE /api/local-models/{id}` remove o registro e o snapshot local.
 
 ### Banco de Vetores e RAG
 
 Cada nó **Banco de Vetores** cria uma coleção persistente própria, isolada pelo
 workspace, workflow e ID do nó. O conteúdo recebido é dividido em trechos,
-vetorizado localmente e deduplicado antes de ser armazenado no MySQL ou SQLite.
+vetorizado localmente e deduplicado antes de ser armazenado no SQLite interno.
 O modo `append` mantém o conhecimento anterior e `replace` recria o conteúdo da
 coleção a cada execução.
 
@@ -151,6 +234,11 @@ As conexões do canvas distinguem dois comportamentos:
 - **database/tool/tools:** conectam recursos ao agente sem transformá-los em
   etapas sequenciais.
 
+Nos fluxos `input/output`, não é necessário combinar manualmente nomes de
+variáveis. Mesmo que dois nós tenham campos configurados com nomes diferentes,
+a conexão direta é a fonte de dados principal e o tipo esperado pelo nó de
+destino é inferido automaticamente.
+
 Para disponibilizar RAG a um agente, conecte `database` do Banco de Vetores em
 `database` do RAG e conecte `tool` do RAG em `tools` do Agente IA. Para
 ferramentas externas, configure um nó **MCP Server** com um endpoint Streamable
@@ -159,44 +247,56 @@ protocolo MCP, descobre `tools/list`, escolhe a ferramenta compatível com a
 consulta e a executa com `tools/call`; o resultado passa a compor o contexto do
 agente.
 
-## 🚀 Início rápido com Docker
+## 🚀 Instalação
 
-> [!IMPORTANT]
-> **Você não precisa instalar Python, PyReact, LangGraph, FastAPI, MySQL,
-> bibliotecas Python ou ferramentas de build no computador.** O Dockerfile
-> instala automaticamente todo o ambiente da aplicação, enquanto o Compose
-> configura o MySQL e a rede entre os serviços.
+### PowerShell — recomendado no Windows
 
-### Pré-requisitos
+```powershell
+powershell -ExecutionPolicy ByPass -c "irm https://raw.githubusercontent.com/wanbnn/agenticflow/main/install.ps1 | iex"
+```
 
-Somente:
+O instalador prepara Python 3.12 e `pipx`, instala o AgenticFlow isoladamente,
+detecta NVIDIA/AMD/Apple/CPU e resolve CUDA, ROCm, MPS ou CPU. Depois, abra um
+novo terminal e execute:
 
-- [Git](https://git-scm.com/);
-- [Docker](https://docs.docker.com/get-docker/) com Docker Compose.
+```powershell
+agenticflow
+```
 
-### 1. Clone e configure
+O navegador abre automaticamente em `http://127.0.0.1:16777`.
+
+### PyPI
+
+```bash
+pip install agenticflow-studio
+agenticflow
+```
+
+Na primeira execução, `agenticflow` instala somente o runtime adequado ao
+hardware e o binário correspondente do llama.cpp. Comandos úteis:
+
+```bash
+agenticflow install          # instala ou repara runtimes
+agenticflow doctor           # diagnóstico de GPU, PyTorch, llama.cpp e SQLite
+agenticflow serve --no-browser
+```
+
+### Inicialização direta no Windows
+
+Execute `start.bat` na raiz do projeto. Na primeira execução ele localiza ou
+instala Python compatível, cria `.venv`, detecta automaticamente CPU ou GPU AMD,
+instala o runtime adequado e inicia em `http://127.0.0.1:16777`. Use
+`AGENTIC_FLOW_AMD_GFX=gfx1200` somente para sobrescrever a detecção, ou
+`AGENTIC_FLOW_DISABLE_ROCM=1` para forçar CPU.
+
+### Docker
+
+O container também usa SQLite e precisa somente de um volume persistente:
 
 ```bash
 git clone https://github.com/wanbnn/agenticflow.git
 cd agenticflow
 cp .env.example .env
-```
-
-No PowerShell, use `Copy-Item .env.example .env`.
-
-Troque os valores abaixo no `.env` antes de expor a instalação:
-
-```dotenv
-MYSQL_PASSWORD=uma-senha-forte
-MYSQL_ROOT_PASSWORD=outra-senha-forte
-SESSION_SECRET=uma-string-aleatoria-longa
-CREDENTIALS_ENCRYPTION_KEY=outra-string-aleatoria-longa
-COOKIE_SECURE=false
-```
-
-### 2. Suba a plataforma
-
-```bash
 docker compose up -d --build
 docker compose ps
 ```
@@ -208,15 +308,11 @@ O build instala no container:
 - UIKitPR e 6cons;
 - FastAPI e Uvicorn;
 - LangGraph e LangChain Core;
-- SQLAlchemy e PyMySQL;
+- SQLAlchemy, SQLite e drivers dos nós de banco;
 - clientes HTTP nativos para protocolos OpenAI e Anthropic;
 - criptografia, autenticação, Transformers, Diffusers, PyTorch e Hugging Face Hub.
 
-O Compose também baixa e configura o **MySQL 8.4**, cria o banco
-`agentic_flow`, aplica healthchecks e só inicia a aplicação quando o banco
-estiver saudável.
-
-### 3. Crie o administrador
+### Primeiro acesso
 
 Abra [http://127.0.0.1:16777](http://127.0.0.1:16777).
 
@@ -230,12 +326,11 @@ acessos exigem login.
 
 ## 💾 Persistência e redeploy
 
-O Compose cria dois volumes nomeados:
+O Compose cria um volume nomeado:
 
 | Volume | Conteúdo |
 | --- | --- |
-| `agentic_flow_mysql_data` | Usuários, workspaces, memberships, provedores, workflows e execuções |
-| `agentic_flow_app_data` | Cache Hugging Face, snapshots dos modelos e dados auxiliares |
+| `agentic_flow_app_data` | SQLite interno, usuários, workflows, cache Hugging Face e modelos |
 
 Rebuilds, atualizações de imagem e `docker compose down` **não apagam os
 dados**. O comando `docker compose down -v` remove deliberadamente os volumes e
@@ -262,7 +357,7 @@ O administrador configura tudo em **Configurações → Provedores de IA**:
 - presets de Groq, OpenRouter, Google Gemini e Mistral.
 
 Informe nome, URL base, modelo padrão e API key. As chaves são criptografadas
-antes de chegar ao MySQL e nunca retornam ao navegador. Nos nós **Agente IA** e
+antes de chegar ao SQLite e nunca retornam ao navegador. Nos nós **Agente IA** e
 **Modelo LLM**, o usuário apenas seleciona o provedor pelo nome.
 
 Não é necessário colocar chaves de modelos no `.env`.
@@ -299,7 +394,7 @@ flowchart LR
     ENGINE --> LG["LangGraph StateGraph"]
     LG --> PROVIDERS["Provedores de IA"]
     LG --> TOOLS["HTTP / Memória / Condições"]
-    AUTH --> DB[("MySQL 8.4")]
+    AUTH --> DB[("SQLite interno")]
     ENGINE --> DB
     PROVIDERS --> DB
 
@@ -318,7 +413,7 @@ sequenceDiagram
     participant Graph as LangGraph
     participant Agent as Agente IA
     participant Provider as Provedor
-    participant DB as MySQL
+    participant DB as SQLite
 
     Trigger->>API: JSON de entrada
     API->>Graph: Compila e inicia o workflow
@@ -337,27 +432,27 @@ sequenceDiagram
 agentic_flow/
 ├── catalog.py       # catálogo e schema dos nós
 ├── engine.py        # compilação e execução LangGraph
+├── cli.py           # instalação automática e comando agenticflow
 ├── main.py          # API, auth e rotas
 ├── models.py        # contratos Pydantic
 ├── providers.py     # protocolos e criptografia de credenciais
-├── store.py         # persistência MySQL/SQLite via SQLAlchemy
+├── store.py         # persistência SQLite via SQLAlchemy
 ├── ui.py            # componentes declarativos PyReact
 └── static/          # canvas, dashboard, auth, provedores e estilos
 ```
 
 ## 🧪 Desenvolvimento e testes
 
-O caminho recomendado continua sendo Docker. Para desenvolvimento nativo
-opcional, use Python 3.11+:
+Para desenvolvimento nativo, use Python 3.12:
 
 ```bash
 python -m pip install -e ".[dev]"
 python -m pytest
-python -m agentic_flow.main
+agenticflow serve --skip-runtime
 ```
 
-Sem MySQL configurado, o modo nativo utiliza SQLite em
-`data/agentic-flow-v2.db`. A aplicação fica em `http://127.0.0.1:16777` e a
+O banco interno é sempre SQLite. Na instalação PyPI ele fica no diretório de
+dados do usuário (`%LOCALAPPDATA%\AgenticFlow` no Windows). A aplicação fica em `http://127.0.0.1:16777` e a
 documentação da API em `http://127.0.0.1:16777/docs`.
 
 ## 🧩 Criando um novo tipo de nó

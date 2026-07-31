@@ -1,4 +1,5 @@
 # Use o índice de wheels ROCm fornecido pela AMD para ROCm 7.14.
+--extra-index-url https://repo.amd.com/rocm/whl-multi-arch/
 rocm==7.14.0
 rocm-bootstrap==0.1.0
 rocm-sdk-core==7.14.0
@@ -25,6 +26,17 @@ rocm-sdk-device-gfx1201==7.14.0
 rocm-sdk-device-gfx908==7.14.0
 rocm-sdk-device-gfx90a==7.14.0
 rocm-sdk-libraries==7.14.0
+amd-torch-device-gfx1010==2.12.0+rocm7.14.0
+amd-torch-device-gfx1011==2.12.0+rocm7.14.0
+amd-torch-device-gfx1012==2.12.0+rocm7.14.0
+amd-torch-device-gfx1030==2.12.0+rocm7.14.0
+amd-torch-device-gfx1031==2.12.0+rocm7.14.0
+amd-torch-device-gfx1032==2.12.0+rocm7.14.0
+amd-torch-device-gfx1033==2.12.0+rocm7.14.0
+amd-torch-device-gfx1034==2.12.0+rocm7.14.0
+amd-torch-device-gfx1035==2.12.0+rocm7.14.0
+amd-torch-device-gfx1036==2.12.0+rocm7.14.0
+amd-torch-device-gfx11==2.12.0+rocm7.14.0
 amd-torch-device-gfx1100==2.12.0+rocm7.14.0
 amd-torch-device-gfx1101==2.12.0+rocm7.14.0
 amd-torch-device-gfx1102==2.12.0+rocm7.14.0

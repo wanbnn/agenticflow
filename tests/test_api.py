@@ -34,6 +34,7 @@ def test_first_run_requires_admin_and_then_opens_dashboard(tmp_path):
     assert "Equipe de pesquisa" in response.text
     context = client.get("/api/auth/me").json()
     assert context["workspace"]["membership_role"] == "owner"
+    assert context["runtime"]["max_asset_bytes"] > 0
 
 
 def test_editor_is_rendered_with_pyreact_after_login(tmp_path):

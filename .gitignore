@@ -7,7 +7,9 @@ htmlcov/
 .venv/
 venv/
 .env
-data/*.db
+data/
+token_pypi.txt
+*.pypirc
 dist/
 build/
 *.egg-info/

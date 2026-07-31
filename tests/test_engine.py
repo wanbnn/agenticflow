@@ -71,6 +71,96 @@ def test_typed_text_input_feeds_agent_without_field_configuration():
     assert "Explique este recurso" in result.output
 
 
+def test_text_input_uses_configured_initial_text_without_json_input():
+    workflow = Workflow(
+        name="Texto inicial",
+        nodes=[
+            Node(
+                id="text",
+                type="text_input",
+                name="Prompt configurado",
+                config={"input_key": "text", "default_value": "Prompt real do usuário"},
+            ),
+            Node(id="output", type="output", name="Saída", config={}),
+        ],
+        edges=[Edge(source="text", target="output")],
+    )
+
+    result = WorkflowEngine().run(workflow, RunRequest(input={}))
+
+    assert result.status == "success"
+    assert result.output == "Prompt real do usuário"
+
+
+def test_text_input_migrates_custom_legacy_placeholder_to_initial_text():
+    workflow = Workflow(
+        name="Texto legado",
+        nodes=[
+            Node(
+                id="text",
+                type="text_input",
+                name="Prompt antigo",
+                config={"input_key": "text", "placeholder": "Prompt salvo anteriormente"},
+            ),
+            Node(id="output", type="output", name="Saída", config={}),
+        ],
+        edges=[Edge(source="text", target="output")],
+    )
+
+    result = WorkflowEngine().run(workflow, RunRequest(input={}))
+
+    assert result.status == "success"
+    assert result.output == "Prompt salvo anteriormente"
+
+
+def test_connections_override_mismatched_technical_field_names():
+    workflow = Workflow(
+        name="Conexões automáticas",
+        nodes=[
+            Node(
+                id="text",
+                type="text_input",
+                name="Texto",
+                config={"input_key": "entrada_usuario"},
+            ),
+            Node(
+                id="transform",
+                type="transform",
+                name="Preparar",
+                config={"target": "saida_com_outro_nome", "template": "Analise: {{message}}"},
+            ),
+            Node(
+                id="agent",
+                type="agent",
+                name="Agente",
+                config={
+                    "provider": "mock",
+                    "input_field": "nome_inexistente",
+                    "output_field": "resposta_customizada",
+                },
+            ),
+            Node(
+                id="output",
+                type="output",
+                name="Saída",
+                config={"field": "outra_variavel_inexistente"},
+            ),
+        ],
+        edges=[
+            Edge(source="text", target="transform"),
+            Edge(source="transform", target="agent"),
+            Edge(source="agent", target="output"),
+        ],
+    )
+
+    result = WorkflowEngine().run(
+        workflow, RunRequest(input={"entrada_usuario": "contrato complexo"})
+    )
+
+    assert result.status == "success"
+    assert "Analise: contrato complexo" in result.output
+
+
 def test_langgraph_executes_visual_workflow():
     result = WorkflowEngine().run(
         make_workflow(),

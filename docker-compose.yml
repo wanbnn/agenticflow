@@ -1,38 +1,10 @@
 services:
-  mysql:
-    image: mysql:8.4
-    restart: unless-stopped
-    environment:
-      MYSQL_DATABASE: agentic_flow
-      MYSQL_USER: agentic
-      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-agentic_dev_password}
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-agentic_root_dev_password}
-    command:
-      - --character-set-server=utf8mb4
-      - --collation-server=utf8mb4_unicode_ci
-    volumes:
-      - mysql_data:/var/lib/mysql
-    healthcheck:
-      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p$$MYSQL_ROOT_PASSWORD --silent"]
-      interval: 10s
-      timeout: 5s
-      retries: 12
-      start_period: 25s
-
   agentic-flow:
     build:
       context: .
       dockerfile: Dockerfile
     restart: unless-stopped
-    depends_on:
-      mysql:
-        condition: service_healthy
     environment:
-      DB_HOST: mysql
-      DB_PORT: 3306
-      DB_NAME: agentic_flow
-      DB_USER: agentic
-      DB_PASSWORD: ${MYSQL_PASSWORD:-agentic_dev_password}
       SESSION_SECRET: ${SESSION_SECRET:-change-this-session-secret-before-production}
       CREDENTIALS_ENCRYPTION_KEY: ${CREDENTIALS_ENCRYPTION_KEY:-change-this-encryption-key-before-production}
       COOKIE_SECURE: ${COOKIE_SECURE:-false}
@@ -45,7 +17,5 @@ services:
       - agentic_data:/app/data
 
 volumes:
-  mysql_data:
-    name: agentic_flow_mysql_data
   agentic_data:
     name: agentic_flow_app_data

@@ -187,10 +187,92 @@ class WorkflowEngine:
     @staticmethod
     def _incoming_result(node: Node, state: FlowState) -> tuple[Any, bool]:
         results = state.get("results", {})
-        for node_id in reversed(node.config.get("_incoming_node_ids", [])):
-            if node_id in results:
-                return results[node_id], True
+        values = [
+            results[node_id]
+            for node_id in node.config.get("_incoming_node_ids", [])
+            if node_id in results
+        ]
+        if len(values) == 1:
+            return values[0], True
+        if values and all(isinstance(value, dict) for value in values):
+            merged = {}
+            for value in values:
+                merged.update(value)
+            return merged, True
+        if values:
+            return values, True
         return None, False
+
+    @classmethod
+    def _auto_value(cls, value: Any, field: str = "", semantic: str = "any") -> Any:
+        if isinstance(value, dict) and field:
+            configured = lookup(value, field, None)
+            if configured is not None:
+                return configured
+        keys = {
+            "text": (
+                "prompt", "message", "text", "response", "generated_text",
+                "content", "document_text", "local_output", "output", "value",
+            ),
+            "image": ("image", "processed_image", "preview_image", "images", "data_uri", "data"),
+            "images": ("images", "image", "processed_image", "preview_image", "data_uri", "data"),
+            "audio": ("audio", "audios", "data_uri", "data"),
+            "video": ("video", "frames", "data_uri", "data"),
+            "file": ("file", "document", "asset", "data_uri", "data"),
+        }.get(semantic, ())
+        if isinstance(value, dict):
+            if semantic == "file" and ("data" in value or "data_uri" in value):
+                return value
+            if semantic in {"image", "audio", "video", "file"} and (
+                str(value.get("data_uri", "")).startswith(f"data:{semantic}/")
+                or str(value.get("mime_type", "")).startswith(f"{semantic}/")
+            ):
+                return value
+            for key in keys:
+                if key not in value or value[key] is None:
+                    continue
+                candidate = value[key]
+                if semantic == "image" and key == "images" and isinstance(candidate, list):
+                    return candidate[0] if candidate else None
+                return candidate
+            if semantic == "text" and len(value) == 1:
+                return cls._auto_value(next(iter(value.values())), semantic="text")
+            if semantic == "text":
+                return json.dumps(value, ensure_ascii=False, default=str)
+        if isinstance(value, list) and semantic == "text" and value:
+            parts = [cls._auto_value(item, semantic="text") for item in value]
+            return "\n".join(str(part) for part in parts if part is not None)
+        return value
+
+    @classmethod
+    def _apply_connected_aliases(cls, data: dict[str, Any], incoming: Any) -> None:
+        if isinstance(incoming, dict):
+            data.update(incoming)
+        text = cls._auto_value(incoming, semantic="text")
+        if isinstance(text, (str, int, float, bool)):
+            data.update(text=str(text), message=str(text), prompt=str(text))
+        for semantic, alias in (("image", "image"), ("audio", "audio"), ("video", "video")):
+            value = cls._auto_value(incoming, semantic=semantic)
+            if value is not None and value is not incoming:
+                data[alias] = value
+
+    @classmethod
+    def _apply_result_aliases(cls, data: dict[str, Any], result: Any) -> None:
+        text = cls._auto_value(result, semantic="text")
+        if isinstance(text, (str, int, float, bool)):
+            data.update(text=str(text), message=str(text), response=str(text))
+        if isinstance(result, dict):
+            for key in ("image", "images", "audio", "audios", "video", "frames"):
+                if key in result:
+                    data[key] = result[key]
+            data_uri = str(result.get("data_uri", ""))
+            for prefix, alias in (
+                ("data:image/", "image"),
+                ("data:audio/", "audio"),
+                ("data:video/", "video"),
+            ):
+                if data_uri.startswith(prefix):
+                    data[alias] = result
 
     @classmethod
     def _node_input(
@@ -199,15 +281,15 @@ class WorkflowEngine:
         state: FlowState,
         data: dict[str, Any],
         field: str,
+        semantic: str = "any",
     ) -> tuple[Any, bool]:
         incoming, connected = cls._incoming_result(node, state)
-        if connected and isinstance(incoming, dict):
-            nested = lookup(incoming, field, None)
-            if nested is not None:
-                return nested, True
         if connected:
-            return incoming, True
-        return lookup(data, field, None), False
+            return cls._auto_value(incoming, field, semantic), True
+        configured = lookup(data, field, None)
+        if configured is not None:
+            return configured, False
+        return cls._auto_value(data, semantic=semantic), False
 
     def _search_vector_database(
         self,
@@ -239,6 +321,7 @@ class WorkflowEngine:
         instructions: str,
         mock_prefix: str,
         workspace_id: str,
+        usage_scope: str = "",
     ) -> str:
         provider_id = config.get("provider_id") or config.get("provider", "mock")
         if provider_id == "mock":
@@ -252,6 +335,7 @@ class WorkflowEngine:
             instructions=instructions,
             prompt=prompt,
             temperature=float(config.get("temperature", 0.2)),
+            usage_scope=usage_scope,
         )
 
     def _execute_node(self, node: Node, state: FlowState) -> dict[str, Any]:
@@ -259,6 +343,9 @@ class WorkflowEngine:
         data = dict(state.get("data", {}))
         config = node.config
         result: Any = None
+        incoming_value, has_incoming = self._incoming_result(node, state)
+        if has_incoming:
+            self._apply_connected_aliases(data, incoming_value)
 
         try:
             if node.type == "input":
@@ -267,6 +354,15 @@ class WorkflowEngine:
                 input_key = str(config.get("input_key") or "text")
                 result = lookup(data, input_key, data.get("message"))
                 if result is None:
+                    result = config.get("default_value")
+                legacy_placeholder = str(config.get("placeholder") or "").strip()
+                if (
+                    (result is None or result == "")
+                    and legacy_placeholder
+                    and legacy_placeholder != "Digite ou cole o texto..."
+                ):
+                    result = legacy_placeholder
+                if result is None or result == "":
                     raise ValueError("Informe o texto de entrada no playground.")
                 result = str(result)
                 data[input_key] = result
@@ -311,7 +407,7 @@ class WorkflowEngine:
                 input_field = config.get("input_field", "file")
                 output_field = config.get("output_field", "document_text")
                 asset, _ = self._node_input(
-                    node, state, data, input_field
+                    node, state, data, input_field, "file"
                 )
                 if asset is None:
                     raise ValueError(f"O campo de arquivo “{input_field}” não foi informado.")
@@ -322,17 +418,46 @@ class WorkflowEngine:
                 input_field = config.get("input_field", "image")
                 output_field = config.get("output_field", "processed_image")
                 asset, _ = self._node_input(
-                    node, state, data, input_field
+                    node, state, data, input_field, "image"
                 )
                 if asset is None:
                     raise ValueError(f"O campo de imagem “{input_field}” não foi informado.")
                 result = process_image(asset, config)
                 data[output_field] = result
+            elif node.type == "image_preview":
+                input_field = config.get("input_field", "images")
+                output_field = config.get("output_field", "preview_image")
+                value, connected = self._node_input(node, state, data, input_field, "images")
+                if value is None and not connected:
+                    value = data.get("images", data.get("image"))
+                if isinstance(value, list):
+                    result = {"images": value}
+                elif isinstance(value, dict) and isinstance(value.get("images"), list):
+                    result = value
+                elif isinstance(value, dict) and str(value.get("data_uri", "")).startswith("data:image/"):
+                    result = value
+                elif isinstance(value, str) and value.startswith("data:image/"):
+                    result = {"data_uri": value}
+                else:
+                    raise ValueError(
+                        "O nó Visualizar imagem precisa receber uma imagem ou uma coleção images."
+                    )
+                preview_items = result.get("images", [result])
+                if not any(
+                    (isinstance(item, str) and item.startswith("data:image/"))
+                    or (
+                        isinstance(item, dict)
+                        and str(item.get("data_uri", "")).startswith("data:image/")
+                    )
+                    for item in preview_items
+                ):
+                    raise ValueError("Nenhuma imagem válida foi encontrada para visualizar.")
+                data[output_field] = result
             elif node.type == "video_frames":
                 input_field = config.get("input_field", "video")
                 output_field = config.get("output_field", "frames")
                 asset, _ = self._node_input(
-                    node, state, data, input_field
+                    node, state, data, input_field, "video"
                 )
                 if asset is None:
                     raise ValueError(f"O campo de vídeo “{input_field}” não foi informado.")
@@ -348,11 +473,53 @@ class WorkflowEngine:
                     raise ValueError("Selecione um modelo local instalado.")
                 input_field = str(config.get("input_field") or "prompt")
                 output_field = str(config.get("output_field") or "local_output")
-                value, connected = self._node_input(node, state, data, input_field)
+                selected_model = local_runtime.store.get_local_model(
+                    model_id, state.get("workspace_id", "")
+                )
+                model_task = str((selected_model or {}).get("task") or "")
+                capabilities = local_runtime.capabilities(selected_model or {})
+                accepts_image = "image" in capabilities.get("input_modalities", [])
+                raw_input, has_raw_input = self._incoming_result(node, state)
+                connected_image = (
+                    local_runtime.extract_image(raw_input) if has_raw_input else None
+                )
+                if connected_image is not None and not accepts_image:
+                    repository_id = str(
+                        (selected_model or {}).get("repository_id") or model_id
+                    )
+                    raise ValueError(
+                        f"O modelo {repository_id} aceita somente texto e não consegue "
+                        "avaliar imagens. Selecione um modelo marcado como ‘Aceita imagem’ "
+                        "ou instale um LLM multimodal na biblioteca Hugging Face."
+                    )
+                input_semantic = (
+                    "any"
+                    if accepts_image and "text" in capabilities.get("input_modalities", [])
+                    else "image"
+                    if accepts_image
+                    else "audio"
+                    if model_task == "automatic-speech-recognition"
+                    else "text"
+                )
+                value, connected = self._node_input(
+                    node, state, data, input_field, input_semantic
+                )
                 if value is None and not connected:
                     value = data.get("prompt", data.get("message"))
                 if value is None:
                     raise ValueError(f"O campo de entrada “{input_field}” não foi informado.")
+                image = local_runtime.extract_image(value) if accepts_image else None
+                if image is not None:
+                    vision_prompt = str(config.get("vision_prompt") or "").strip()
+                    if not vision_prompt and isinstance(value, dict):
+                        vision_prompt = local_runtime.extract_text(value)
+                    value = {
+                        "image": image,
+                        "vision_prompt": vision_prompt or (
+                            "Analise esta imagem em detalhes. Explique o que foi criado, "
+                            "aponte possíveis problemas e sugira melhorias."
+                        ),
+                    }
                 parameters = config.get("parameters") or {}
                 if isinstance(parameters, str):
                     try:
@@ -366,6 +533,7 @@ class WorkflowEngine:
                     workspace_id=state.get("workspace_id", ""),
                     value=value,
                     parameters=parameters,
+                    usage_scope=state.get("workflow_id", ""),
                 )
                 data[output_field] = result
             elif node.type == "vector_database":
@@ -374,7 +542,7 @@ class WorkflowEngine:
                 input_field = config.get("input_field", "document_text")
                 output_field = config.get("output_field", "vector_database")
                 value, _ = self._node_input(
-                    node, state, data, input_field
+                    node, state, data, input_field, "text"
                 )
                 if value is None:
                     raise ValueError(
@@ -425,13 +593,10 @@ class WorkflowEngine:
                 data["_last_vector_database_node_id"] = node.id
             elif node.type == "rag":
                 query_field = config.get("query_field", "message")
-                query = str(
-                    lookup(
-                        data,
-                        query_field,
-                        data.get("prompt") or data.get("message") or "",
-                    )
-                ).strip()
+                query_value, _ = self._node_input(
+                    node, state, data, query_field, "text"
+                )
+                query = str(query_value or "").strip()
                 if not query:
                     raise ValueError(
                         f"O campo de consulta “{query_field}” não foi informado."
@@ -481,7 +646,9 @@ class WorkflowEngine:
                 )
                 data[config.get("output_field", "database_result")] = result
             elif node.type == "condition":
-                actual = lookup(data, config.get("field", ""))
+                actual, _ = self._node_input(
+                    node, state, data, config.get("field", ""), "any"
+                )
                 expected = config.get("value")
                 op = config.get("operator", "equals")
                 if isinstance(expected, str):
@@ -502,13 +669,15 @@ class WorkflowEngine:
                 result = bool(comparisons.get(op, comparisons["equals"])())
                 data[f"_condition_{node.id}"] = result
             elif node.type == "llm":
-                prompt = str(data.get("prompt") or data.get("message") or json.dumps(data))
+                prompt_value, _ = self._node_input(node, state, data, "prompt", "text")
+                prompt = str(prompt_value if prompt_value is not None else json.dumps(data))
                 result = self._call_model(
                     prompt=prompt,
                     config=config,
                     instructions=config.get("system_prompt", "Seja útil."),
                     mock_prefix="Resposta simulada do agente",
                     workspace_id=state.get("workspace_id", ""),
+                    usage_scope=state.get("workflow_id", ""),
                 )
                 data["response"] = result
             elif node.type == "agent":
@@ -516,7 +685,7 @@ class WorkflowEngine:
                 input_field = config.get("input_field", "prompt")
                 output_field = config.get("output_field", "response")
                 incoming, connected = self._node_input(
-                    node, state, data, input_field
+                    node, state, data, input_field, "text"
                 )
                 prompt = str(
                     incoming
@@ -613,6 +782,7 @@ class WorkflowEngine:
                     instructions=instructions,
                     mock_prefix=f"Resposta simulada de {role}",
                     workspace_id=state.get("workspace_id", ""),
+                    usage_scope=state.get("workflow_id", ""),
                 )
                 data[output_field] = result
             elif node.type == "http":
@@ -636,22 +806,30 @@ class WorkflowEngine:
                 key = config.get("key", "conversation")
                 source = config.get("source", "message")
                 current = list(data.get(key, []))
-                current.append(lookup(data, source))
+                memory_value, _ = self._node_input(node, state, data, source, "any")
+                current.append(memory_value)
                 data[key] = current
                 result = current
             elif node.type == "output":
                 field = config.get("field", "response")
                 incoming, connected = self._incoming_result(node, state)
                 configured = lookup(data, field, None)
-                result = (
-                    configured
-                    if configured is not None
-                    else incoming
-                    if connected
-                    else data
-                )
+                if connected:
+                    result = self._auto_value(incoming, field, "any")
+                    if result is incoming and isinstance(incoming, dict) and any(
+                        key in incoming
+                        for key in (
+                            "response", "generated_text", "text", "content",
+                            "document_text", "local_output", "message",
+                        )
+                    ):
+                        result = self._auto_value(incoming, semantic="text")
+                else:
+                    result = configured if configured is not None else data
             else:
                 raise ValueError(f"Executor não implementado para {node.type}.")
+
+            self._apply_result_aliases(data, result)
 
             event = RunEvent(
                 node_id=node.id,

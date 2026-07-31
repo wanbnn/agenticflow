@@ -839,6 +839,24 @@ class Store:
             )
             return self._local_model_dict(row) if row else None
 
+    def find_local_model(
+        self,
+        workspace_id: str,
+        repository_id: str,
+        revision: str,
+        task: str,
+    ) -> dict[str, object] | None:
+        with self.Session() as db:
+            row = db.scalar(
+                select(LocalModelRow).where(
+                    LocalModelRow.workspace_id == workspace_id,
+                    LocalModelRow.repository_id == repository_id,
+                    LocalModelRow.revision == revision,
+                    LocalModelRow.task == task,
+                )
+            )
+            return self._local_model_dict(row) if row else None
+
     def create_local_model(
         self,
         *,
@@ -873,6 +891,7 @@ class Store:
         status: str,
         local_path: str = "",
         error: str = "",
+        options: dict[str, object] | None = None,
     ) -> dict[str, object] | None:
         with self.Session.begin() as db:
             row = db.scalar(
@@ -886,6 +905,8 @@ class Store:
             row.status = status
             row.local_path = local_path
             row.error = error
+            if options is not None:
+                row.options_json = json.dumps(options, ensure_ascii=False)
             row.updated_at = utc_now()
         return self._local_model_dict(row)
 

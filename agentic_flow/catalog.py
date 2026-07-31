@@ -32,9 +32,19 @@ NODE_CATALOG: list[dict[str, Any]] = [
         "outputs": [
             {"id": "default", "label": "texto", "kind": "flow", "data_type": "text"}
         ],
-        "defaults": {"input_key": "text", "placeholder": "Digite ou cole o texto..."},
+        "defaults": {
+            "input_key": "text",
+            "default_value": "",
+            "placeholder": "Digite ou cole o texto...",
+        },
         "fields": [
-            {"key": "placeholder", "label": "Texto de orientação", "type": "text"},
+            {"key": "default_value", "label": "Texto inicial (opcional)", "type": "textarea"},
+            {
+                "key": "placeholder",
+                "label": "Orientação do campo",
+                "type": "text",
+                "advanced": True,
+            },
             {
                 "key": "input_key",
                 "label": "Chave técnica",
@@ -218,16 +228,19 @@ NODE_CATALOG: list[dict[str, Any]] = [
             {"id": "input", "label": "entrada", "kind": "flow", "multiple": False}
         ],
         "outputs": [
-            {"id": "default", "label": "resultado", "kind": "flow"}
+            {"id": "default", "label": "resultado", "kind": "flow"},
+            {"id": "image", "label": "imagem", "kind": "flow", "data_type": "image"},
         ],
         "defaults": {
             "model_id": "",
             "input_field": "prompt",
             "output_field": "local_output",
+            "vision_prompt": "Analise esta imagem em detalhes. Explique o que foi criado, aponte possíveis problemas e sugira melhorias.",
             "parameters": "{}",
         },
         "fields": [
             {"key": "model_id", "label": "Modelo instalado", "type": "local_model_select"},
+            {"key": "vision_prompt", "label": "Instrução para análise de imagem", "type": "textarea"},
             {"key": "input_field", "label": "Campo de entrada", "type": "text", "advanced": True},
             {"key": "output_field", "label": "Campo de saída", "type": "text", "advanced": True},
             {"key": "parameters", "label": "Parâmetros de inferência (JSON)", "type": "textarea", "advanced": True},
@@ -429,6 +442,28 @@ NODE_CATALOG: list[dict[str, Any]] = [
         ],
     },
     {
+        "type": "image_preview",
+        "name": "Visualizar imagem",
+        "description": "Recebe imagens geradas ou processadas e mostra uma galeria diretamente no canvas.",
+        "category": "Arquivos e mídia",
+        "color": "#14b8a6",
+        "icon": "VIEW",
+        "inputs": [
+            {"id": "input", "label": "imagem", "kind": "flow", "data_type": "image", "multiple": False}
+        ],
+        "outputs": [
+            {"id": "default", "label": "imagem", "kind": "flow", "data_type": "image"}
+        ],
+        "defaults": {
+            "input_field": "images",
+            "output_field": "preview_image",
+        },
+        "fields": [
+            {"key": "input_field", "label": "Campo da imagem", "type": "text", "advanced": True},
+            {"key": "output_field", "label": "Campo de saída", "type": "text", "advanced": True},
+        ],
+    },
+    {
         "type": "video_frames",
         "name": "Vídeo para frames",
         "description": "Transforma MP4, WebM, MOV, AVI e outros vídeos em uma sequência de imagens.",
@@ -608,6 +643,7 @@ NODE_ICON_NAMES = {
     "condition": "git-branch",
     "file": "file-text",
     "image": "image",
+    "image_preview": "scan-eye",
     "video_frames": "film",
     "transform": "shuffle",
     "http": "globe",

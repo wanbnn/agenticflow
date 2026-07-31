@@ -25,6 +25,7 @@
     suppressHandleClick: false,
     nodeResults: {},
     typedAssets: {},
+    maxAssetBytes: 25 * 1024 * 1024,
   };
 
   const dom = {
@@ -65,6 +66,13 @@
       if (response.status === 204) return null;
       return response.json();
     });
+  }
+
+  function releaseWorkflowModels() {
+    const workflowId = document.querySelector(".app-shell")?.dataset.workflowId;
+    if (!workflowId) return;
+    const body = new Blob(["{}"], { type: "application/json" });
+    navigator.sendBeacon(`/api/workflows/${workflowId}/release-models`, body);
   }
 
   function uid(prefix) {
@@ -166,6 +174,9 @@
     if (Array.isArray(value)) {
       return value.filter((item) => mediaUri(item, "image"));
     }
+    if (Array.isArray(value?.images)) {
+      return value.images.filter((item) => mediaUri(item, "image"));
+    }
     if (Array.isArray(value?.frames)) {
       return value.frames.filter((item) => mediaUri(item, "image"));
     }
@@ -174,6 +185,8 @@
 
   function renderMedia(value, compact = false) {
     const frames = frameItems(value);
+    const generatedImages = Array.isArray(value?.images);
+    const collectionName = generatedImages ? "imagens" : "frames";
     if (frames.length) {
       if (compact) {
         return `<div class="node-media-preview frame-strip">
@@ -184,7 +197,7 @@
                 `<img src="${escapeHtml(mediaUri(frame, "image"))}" alt="Frame ${Number(frame.index ?? 0) + 1}">`
             )
             .join("")}
-          <span>${frames.length} frames</span>
+          <span>${frames.length} ${collectionName}</span>
         </div>`;
       }
       const visible = frames.slice(0, 60);
@@ -207,7 +220,7 @@
             )
             .join("")}
         </div>
-        <div class="media-gallery-meta">${frames.length} frames capturados${frames.length > visible.length ? ` · exibindo ${visible.length}` : ""}</div>
+        <div class="media-gallery-meta">${frames.length} ${generatedImages ? "imagens geradas" : "frames capturados"}${frames.length > visible.length ? ` · exibindo ${visible.length}` : ""}</div>
       </section>`;
     }
     const image = mediaUri(value, "image");
@@ -234,7 +247,7 @@
     const audio = mediaUri(value, "audio");
     if (audio) {
       return compact
-        ? `<div class="node-media-preview video-preview"><span>♫ Áudio</span></div>`
+        ? `<div class="node-media-preview audio-preview"><audio src="${escapeHtml(audio)}" controls preload="metadata"></audio></div>`
         : `<div class="audio-result-viewer"><audio src="${escapeHtml(audio)}" controls preload="metadata"></audio></div>`;
     }
     return "";
@@ -246,6 +259,25 @@
     return media
       ? `${media}<details class="raw-result"><summary>Ver dados técnicos</summary><pre class="trace-output">${serialized}</pre></details>`
       : `<pre class="trace-output">${serialized}</pre>`;
+  }
+
+  function inlineMediaUpload(node) {
+    if (!["image_input", "video_input", "audio_input"].includes(node.type)) return "";
+    const value = state.typedAssets[node.id];
+    const media = node.type === "audio_input" ? "áudio" : node.type === "video_input" ? "vídeo" : "imagem";
+    const accept = node.type === "audio_input"
+      ? "audio/*,.wav,.mp3,.flac,.m4a,.ogg"
+      : node.type === "video_input"
+      ? "video/*,.mp4,.webm,.mov,.avi,.mkv"
+      : "image/*,.png,.jpg,.jpeg,.webp,.gif,.bmp,.tif,.tiff";
+    return `<div class="node-inline-upload ${value ? "has-file" : ""}" data-node-upload="${escapeHtml(node.id)}">
+      <label class="node-upload-picker" title="${value ? "Substituir arquivo" : `Selecionar ${media}`}">
+        <span>${value ? "↻" : "+"}</span>
+        <strong>${value ? "Substituir" : `Carregar ${media}`}</strong>
+        <input class="hidden" type="file" data-node-card-file="${escapeHtml(node.id)}" accept="${accept}">
+      </label>
+      ${value ? `<small title="${escapeHtml(value.name || "arquivo")}">${escapeHtml(value.name || "arquivo carregado")}</small><button type="button" data-remove-node-file="${escapeHtml(node.id)}" title="Remover arquivo" aria-label="Remover arquivo">×</button>` : '<small>clique ou arraste aqui</small>'}
+    </div>`;
   }
 
   function renderCatalog(query = "") {
@@ -310,6 +342,7 @@
     if (node.type === "prompt") return "Template dinâmico";
     if (node.type === "file") return `${String(node.config.format || "auto").toUpperCase()} · ${node.config.output_field || "document_text"}`;
     if (node.type === "image") return `${node.config.operation || "inspect"} · ${node.config.output_format || "PNG"}`;
+    if (node.type === "image_preview") return "pré-visualização no canvas";
     if (node.type === "video_frames") return `a cada ${node.config.interval_seconds || 1}s · até ${node.config.max_frames || 12} frames`;
     if (node.type === "vector_database") return `${node.config.write_mode || "append"} · base isolada`;
     if (node.type === "rag") {
@@ -339,6 +372,7 @@
           state.nodeResults[node.id] || state.typedAssets[node.id],
           true
         );
+        const inlineUpload = inlineMediaUpload(node);
         const inputHandles = inputs
           .map((port, index) => {
             const top = portOffset(inputs, index);
@@ -358,7 +392,7 @@
           })
           .join("");
         return `
-          <article class="flow-node ${node.id === state.selectedId ? "selected" : ""}"
+          <article class="flow-node node-type-${escapeHtml(node.type)} ${node.id === state.selectedId ? "selected" : ""}"
             data-node-id="${node.id}"
             style="left:${node.position.x}px;top:${node.position.y}px;--node-color:${meta.color}">
             ${inputHandles}
@@ -372,6 +406,7 @@
               <button class="node-menu" tabindex="-1">•••</button>
             </div>
             ${preview}
+            ${inlineUpload}
             <div class="node-status"><span class="status-dot"></span>${escapeHtml(meta.category || "Nó")}</div>
           </article>`;
       })
@@ -396,14 +431,43 @@
         event.stopPropagation();
         selectNode(element.dataset.nodeId);
       });
-      $(".node-media-preview", element)?.addEventListener("click", (event) => {
+      const mediaPreview = $(".node-media-preview", element);
+      mediaPreview?.addEventListener("pointerdown", (event) => event.stopPropagation());
+      mediaPreview?.addEventListener("click", (event) => {
         event.stopPropagation();
+        if (event.target.closest("audio,video")) return;
         const result = state.nodeResults[element.dataset.nodeId] || state.typedAssets[element.dataset.nodeId];
         openDrawer();
         dom.resultPlaceholder.classList.add("hidden");
         dom.runTrace.classList.remove("hidden");
         dom.runTrace.innerHTML = renderRichOutput(result);
       });
+      const upload = $("[data-node-upload]", element);
+      if (upload) {
+        upload.addEventListener("pointerdown", (event) => event.stopPropagation());
+        upload.addEventListener("click", (event) => event.stopPropagation());
+        upload.addEventListener("dragover", (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          upload.classList.add("drag-over");
+        });
+        upload.addEventListener("dragleave", () => upload.classList.remove("drag-over"));
+        upload.addEventListener("drop", (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          upload.classList.remove("drag-over");
+          attachTypedFile(element.dataset.nodeId, event.dataTransfer.files?.[0]);
+        });
+        $("[data-node-card-file]", upload)?.addEventListener("change", (event) =>
+          attachTypedFile(element.dataset.nodeId, event.target.files?.[0])
+        );
+        $("[data-remove-node-file]", upload)?.addEventListener("click", () => {
+          delete state.typedAssets[element.dataset.nodeId];
+          renderRunInputs();
+          renderNodes();
+          toast("Arquivo removido do nó.");
+        });
+      }
       $$(".handle", element).forEach((handle) => {
         handle.addEventListener("pointerdown", (event) => {
           event.stopPropagation();
@@ -876,18 +940,42 @@
           <small class="field-help"><a href="/settings/databases">Gerenciar bancos do workspace</a></small>`;
         } else if (field.type === "local_model_select") {
           const options = state.localModels.filter((model) => model.status === "ready");
+          const receivesImage = state.workflow.edges.some((edge) => {
+            if (edge.target !== node.id) return false;
+            const source = state.workflow.nodes.find((candidate) => candidate.id === edge.source);
+            if (!source) return false;
+            if (edge.source_handle === "image" || ["image_input", "image", "image_preview"].includes(source.type)) {
+              return true;
+            }
+            if (source.type !== "local_model") return false;
+            const sourceModel = state.localModels.find((model) => model.id === source.config.model_id);
+            return sourceModel?.capabilities?.output_modalities?.includes("image");
+          });
           control = `<select data-config-key="${field.key}">
-            <option value="">Selecione um modelo local</option>
+            <option value="">${receivesImage ? "Selecione um modelo que aceita imagem" : "Selecione um modelo local"}</option>
             ${options
               .map(
-                (model) =>
-                  `<option value="${escapeHtml(model.id)}" ${
+                (model) => {
+                  const acceptsImage = model.capabilities?.input_modalities?.includes("image");
+                  const incompatible = receivesImage && !acceptsImage;
+                  return `<option ${incompatible ? "disabled " : ""}value="${escapeHtml(model.id)}" ${
                     String(value) === model.id ? "selected" : ""
-                  }>${escapeHtml(model.repository_id)} · ${escapeHtml(model.task)}</option>`
+                  }>${escapeHtml(model.repository_id)} · ${escapeHtml(model.task)}${
+                    acceptsImage
+                      ? " · aceita imagem"
+                      : receivesImage
+                      ? " · incompatível com imagem"
+                      : ""
+                  }</option>`;
+                }
               )
               .join("")}
           </select>
-          <small class="field-help"><a href="/settings/providers">Instalar modelos Hugging Face</a></small>`;
+          <small class="field-help">${
+            receivesImage
+              ? "A conexão fornece uma imagem; modelos incompatíveis foram desabilitados. "
+              : ""
+          }<a href="/settings/providers">Instalar modelos Hugging Face</a></small>`;
         } else if (field.type === "node_select") {
           const allowedTypes = field.node_types || [];
           const options = state.workflow.nodes.filter(
@@ -929,9 +1017,16 @@
         } else {
           control = `<input type="${field.type || "text"}" data-config-key="${field.key}" value="${escapeHtml(value)}">`;
         }
-        return `<div class="field"><label>${escapeHtml(field.label)}</label>${control}${
+        const automaticWiringField = [
+          "input_field", "output_field", "query_field", "context_field",
+          "matches_field", "source", "target", "field",
+        ].includes(field.key);
+        const label = automaticWiringField ? `${field.label} (opcional)` : field.label;
+        return `<div class="field"><label>${escapeHtml(label)}</label>${control}${
           field.key === "template"
             ? '<small class="field-help">Use {{campo}} para inserir dados do fluxo.</small>'
+            : automaticWiringField
+            ? '<small class="field-help">As conexões resolvem este valor automaticamente. Preencha apenas para sobrescrever.</small>'
             : ""
         }</div>`;
       };
@@ -951,6 +1046,11 @@
             <div class="advanced-settings-body">${advancedFields}</div>
           </details>`
         : "");
+    const automaticConnectionNote = (meta.inputs || []).some(
+      (input) => (input.kind || "flow") === "flow"
+    )
+      ? '<div class="automatic-wiring-note"><strong>Conexão automática ativa</strong><span>O AgenticFlow usa diretamente a saída do nó conectado e identifica texto, imagem, áudio ou vídeo sem depender do nome das variáveis.</span></div>'
+      : "";
     const note =
       node.type === "llm" || node.type === "agent"
         ? '<div class="provider-note">Escolha um provedor cadastrado visualmente. O modelo em branco usa o padrão definido no provedor.</div>'
@@ -967,7 +1067,7 @@
         : node.type === "webhook"
         ? '<div class="provider-note">A URL é exclusiva deste nó. O corpo JSON recebido vira os dados de entrada e a execução aparece no histórico do workflow.</div>'
         : "";
-    dom.inspectorForm.innerHTML = nameField + configFields + note;
+    dom.inspectorForm.innerHTML = nameField + automaticConnectionNote + configFields + note;
     if (node.type === "vector_database") {
       const status = $("#vector-database-status", dom.inspectorForm);
       api(`/api/workflows/${state.workflow.id}/vector-databases/${node.id}`)
@@ -1131,20 +1231,44 @@
     );
   }
 
+  function textInputValue(node) {
+    if (Object.prototype.hasOwnProperty.call(state.typedAssets, node.id)) {
+      return typeof state.typedAssets[node.id] === "string"
+        ? state.typedAssets[node.id]
+        : "";
+    }
+    const configured = node.config.default_value;
+    if (configured != null && String(configured) !== "") return String(configured);
+    const legacyPlaceholder = String(node.config.placeholder || "").trim();
+    return legacyPlaceholder && legacyPlaceholder !== "Digite ou cole o texto..."
+      ? legacyPlaceholder
+      : "";
+  }
+
   function renderRunInputs() {
     const container = $("#typed-run-inputs");
     const inputs = typedInputNodes();
-    $("#advanced-run-input").open = inputs.length === 0;
+    const hasJsonInput = state.workflow.nodes.some((node) => node.type === "input");
+    const advancedInput = $("#advanced-run-input");
+    advancedInput.hidden = inputs.length > 0 && !hasJsonInput;
+    advancedInput.open = inputs.length === 0;
     container.innerHTML = inputs.length
       ? inputs
           .map((node) => {
             const value = state.typedAssets[node.id];
             if (node.type === "text_input") {
+              const textValue = textInputValue(node);
+              const legacyValue =
+                !node.config.default_value &&
+                textValue &&
+                textValue === String(node.config.placeholder || "").trim();
               return `<div class="typed-input-card text">
                 <div class="typed-input-head"><span>TXT</span><strong>${escapeHtml(node.name)}</strong></div>
                 <textarea data-typed-text="${node.id}" placeholder="${escapeHtml(
-                  node.config.placeholder || "Digite ou cole o texto..."
-                )}">${escapeHtml(typeof value === "string" ? value : "")}</textarea>
+                  legacyValue
+                    ? "Digite ou cole o texto..."
+                    : node.config.placeholder || "Digite ou cole o texto..."
+                )}">${escapeHtml(textValue)}</textarea>
               </div>`;
             }
             const isVideo = node.type === "video_input";
@@ -1166,12 +1290,18 @@
     const node = state.workflow.nodes.find((item) => item.id === nodeId);
     if (!node || !file) return;
     const expected = node.type === "audio_input" ? "audio/" : node.type === "video_input" ? "video/" : "image/";
-    if (!file.type.startsWith(expected)) {
+    const extension = `.${String(file.name || "").split(".").pop().toLowerCase()}`;
+    const supportedExtensions = {
+      "audio/": [".wav", ".mp3", ".flac", ".m4a", ".ogg", ".aac"],
+      "video/": [".mp4", ".webm", ".mov", ".avi", ".mkv"],
+      "image/": [".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp", ".tif", ".tiff"],
+    };
+    if (!file.type.startsWith(expected) && !supportedExtensions[expected].includes(extension)) {
       toast(`Selecione um arquivo de ${expected === "audio/" ? "áudio" : expected === "video/" ? "vídeo" : "imagem"}.`, "error");
       return;
     }
-    if (file.size > 25 * 1024 * 1024) {
-      toast("O arquivo excede o limite de 25 MB.", "error");
+    if (file.size > state.maxAssetBytes) {
+      toast(`O arquivo excede o limite de ${Math.floor(state.maxAssetBytes / 1024 / 1024)} MB.`, "error");
       return;
     }
     const reader = new FileReader();
@@ -1208,14 +1338,19 @@
   }
 
   async function executeWorkflow() {
-    let input;
-    try {
-      input = JSON.parse(dom.runInput.value);
-    } catch {
-      toast("Corrija o JSON de entrada.", "error");
-      return;
+    const typedNodes = typedInputNodes();
+    const readsJsonInput =
+      typedNodes.length === 0 || state.workflow.nodes.some((node) => node.type === "input");
+    let input = {};
+    if (readsJsonInput) {
+      try {
+        input = JSON.parse(dom.runInput.value || "{}");
+      } catch {
+        toast("Corrija o JSON de entrada.", "error");
+        return;
+      }
     }
-    typedInputNodes().forEach((node) => {
+    typedNodes.forEach((node) => {
       const key = node.config.input_key ||
         (node.type === "text_input"
           ? "text"
@@ -1305,6 +1440,7 @@
   }
 
   function bindGlobalEvents() {
+    window.addEventListener("pagehide", releaseWorkflowModels);
     $("#node-search").addEventListener("input", (event) => renderCatalog(event.target.value));
     document.addEventListener("keydown", (event) => {
       if (event.key === "/" && !event.target.matches("input,textarea")) {
@@ -1467,8 +1603,8 @@
     $("#asset-file").addEventListener("change", (event) => {
       const file = event.target.files?.[0];
       if (!file) return;
-      if (file.size > 25 * 1024 * 1024) {
-        toast("O arquivo excede o limite de 25 MB.", "error");
+      if (file.size > state.maxAssetBytes) {
+        toast(`O arquivo excede o limite de ${Math.floor(state.maxAssetBytes / 1024 / 1024)} MB.`, "error");
         event.target.value = "";
         return;
       }
@@ -1512,6 +1648,7 @@
       state.localModels = localModels;
       state.databaseConnections = databaseConnections;
       state.permissions = context.permissions || {};
+      state.maxAssetBytes = Number(context.runtime?.max_asset_bytes || state.maxAssetBytes);
       renderCatalog();
       hydrateWorkflow();
       applyPermissions();
