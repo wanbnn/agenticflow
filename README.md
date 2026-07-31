@@ -51,10 +51,10 @@ programa.
 | --- | --- |
 | Editor visual | Drag-and-drop, conexões, zoom, minimapa, auto-layout, undo/redo e inspetor |
 | Multiagente | Papéis independentes, prompts, campos de entrada/saída e colaboração sequencial ou ramificada |
-| Nós | Entradas tipadas de texto, imagem e vídeo, JSON, Webhook, Prompt, LLM, Agente, Banco de Vetores, RAG, MCP Server, Condição, Documentos, processamento visual de imagens, galeria de frames, Transformação, HTTP, Memória e Saída |
+| Nós | Entradas tipadas, LLM, modelo local multimodal, Agente, Banco de Vetores, RAG, MCP, documentos, imagem, vídeo, HTTP, memória e saída |
 | Templates | 21 workflows prontos para RAG, Vector DB, MCP, HTTP, memória, condições, bancos SQL, mídia, LLM e equipes de agentes |
 | Conhecimento | Banco de Vetores nativo por nó, ingestão persistente, busca semântica local e RAG conectado a agentes |
-| Provedores | OpenAI, Anthropic, Ollama, Groq, OpenRouter, Gemini, Mistral e APIs compatíveis |
+| Provedores | OpenAI, Anthropic, Ollama, Hugging Face local, Groq, OpenRouter, Gemini, Mistral e APIs compatíveis |
 | Segurança | RBAC Admin/Manager/User, multi-workspace, times, políticas, sessões assinadas e credenciais criptografadas |
 | Operação | MySQL, histórico de runs, healthcheck, volumes Docker e API OpenAPI em `/docs` |
 | Integrações | Webhooks persistentes e requisições HTTP para serviços externos |
@@ -62,7 +62,7 @@ programa.
 ### Arquivos e mídia
 
 O playground cria automaticamente o controle adequado para cada nó de entrada:
-campo de texto, seletor de imagem com preview ou seletor de vídeo com player.
+campo de texto e seletores de imagem, vídeo ou áudio com preview/player.
 Não é necessário conhecer nomes de campos para conectar e executar esses fluxos.
 A entrada JSON continua disponível como configuração avançada para integrações.
 
@@ -78,6 +78,35 @@ extração de frames produz uma galeria navegável com miniaturas e timestamps.
 
 O limite padrão por asset é 25 MB e pode ser alterado com
 `AGENTIC_FLOW_MAX_ASSET_MB`.
+
+### Inferência self-hosted e Hugging Face
+
+Em **Configurações → Provedores de IA → Modelos Hugging Face locais**, o
+administrador pesquisa o Hub ou informa qualquer `repository_id`, escolhe a
+modalidade e instala o snapshot no volume persistente. O token informado para
+um modelo privado é usado somente durante o download e não é armazenado.
+
+O nó **Modelo local multimodal** executa no servidor modelos de geração de
+texto, visão, reconhecimento e síntese de áudio, geração de imagem, 3D e
+embeddings. Um modelo de `text-generation` também pode ser selecionado como
+modelo padrão de um provedor **Hugging Face local**, permitindo reutilizá-lo
+nos nós LLM e Agente. Os pipelines são carregados sob demanda, mantidos em
+cache e podem ser descarregados pela API para liberar VRAM.
+
+Para desenvolvimento local em CPU/CUDA, instale `pip install -e
+".[self-hosted]"`. Em uma máquina AMD, configure o índice Python ROCm 7.14 da
+AMD e use `pip install -r requirements-amd-rocm.txt`; esse lock inclui PyTorch
+2.12, TorchVision 0.27, TorchAudio 2.11 e os pacotes `gfx` informados para cada
+arquitetura. O endpoint `GET /api/local-models/hardware` mostra o backend, a
+versão HIP/ROCm e as GPUs que o processo realmente detectou.
+
+Endpoints principais:
+
+- `GET /api/huggingface/models` pesquisa o Hub;
+- `POST /api/local-models` registra e baixa um modelo;
+- `POST /api/local-models/{id}/infer` executa inferência multimodal;
+- `POST /api/local-models/{id}/unload` libera RAM/VRAM;
+- `DELETE /api/local-models/{id}` remove o registro e o snapshot local.
 
 ### Banco de Vetores e RAG
 
@@ -181,7 +210,7 @@ O build instala no container:
 - LangGraph e LangChain Core;
 - SQLAlchemy e PyMySQL;
 - clientes HTTP nativos para protocolos OpenAI e Anthropic;
-- criptografia, autenticação e todas as dependências do `pyproject.toml`.
+- criptografia, autenticação, Transformers, Diffusers, PyTorch e Hugging Face Hub.
 
 O Compose também baixa e configura o **MySQL 8.4**, cria o banco
 `agentic_flow`, aplica healthchecks e só inicia a aplicação quando o banco
@@ -206,7 +235,7 @@ O Compose cria dois volumes nomeados:
 | Volume | Conteúdo |
 | --- | --- |
 | `agentic_flow_mysql_data` | Usuários, workspaces, memberships, provedores, workflows e execuções |
-| `agentic_flow_app_data` | Dados auxiliares da aplicação |
+| `agentic_flow_app_data` | Cache Hugging Face, snapshots dos modelos e dados auxiliares |
 
 Rebuilds, atualizações de imagem e `docker compose down` **não apagam os
 dados**. O comando `docker compose down -v` remove deliberadamente os volumes e

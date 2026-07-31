@@ -13,7 +13,7 @@ COPY pyproject.toml README.md ./
 COPY agentic_flow ./agentic_flow
 
 RUN python -m pip install --upgrade pip && \
-    python -m pip install .
+    python -m pip install ".[self-hosted]"
 
 RUN mkdir -p /app/data && chown -R agentic:agentic /app
 

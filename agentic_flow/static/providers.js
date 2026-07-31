@@ -2,6 +2,8 @@
   const $ = (selector) => document.querySelector(selector);
   let providers = [];
   let types = [];
+  let localModels = [];
+  let localTasks = [];
   const modal = $("#provider-modal");
   const form = $("#provider-form");
 
@@ -70,7 +72,74 @@
     $("#provider-api-key").placeholder = definition.requires_key
       ? "Cole a chave aqui"
       : "Opcional para este provedor";
+    if (definition.protocol === "local") {
+      const ready = localModels.filter((model) => model.status === "ready");
+      if ((force || !$("#provider-model").value) && ready.length) {
+        $("#provider-model").value = ready[0].id;
+      }
+      $("#provider-model").placeholder = "ID mdl-... exibido abaixo";
+    } else {
+      $("#provider-model").placeholder = "";
+    }
   }
+
+  function renderLocalModels() {
+    const grid = $("#local-model-grid");
+    if (!grid) return;
+    grid.innerHTML = localModels.length
+      ? localModels.map((model) => `
+          <article class="provider-card" data-local-model-id="${escapeHtml(model.id)}">
+            <div class="provider-card-head">
+              <span class="provider-logo">HF</span>
+              <span class="provider-status ${model.status === "ready" ? "active" : ""}">${escapeHtml(model.status)}</span>
+            </div>
+            <h2>${escapeHtml(model.repository_id)}</h2>
+            <p>${escapeHtml(model.task)} · revisão ${escapeHtml(model.revision)}</p>
+            <code>${escapeHtml(model.id)}</code>
+            ${model.error ? `<small class="auth-error">${escapeHtml(model.error)}</small>` : ""}
+            <div class="provider-card-actions">
+              <span>${model.local_path ? "● Baixado no servidor" : "○ Cache gerenciado em execução"}</span>
+              <button class="provider-edit" data-delete-local-model="${escapeHtml(model.id)}">Excluir</button>
+            </div>
+          </article>`).join("")
+      : '<div class="workflow-empty-state">Nenhum modelo local instalado.</div>';
+    document.querySelectorAll("[data-delete-local-model]").forEach((button) =>
+      button.addEventListener("click", async () => {
+        if (!window.confirm("Remover o modelo e seus arquivos locais?")) return;
+        await api(`/api/local-models/${button.dataset.deleteLocalModel}`, { method: "DELETE" });
+        localModels = await api("/api/local-models");
+        renderLocalModels();
+      })
+    );
+  }
+
+  function openLocalModelModal() {
+    $("#local-model-form").reset();
+    $("#local-revision").value = "main";
+    $("#local-task").innerHTML = localTasks.map((item) =>
+      `<option value="${escapeHtml(item.task)}">${escapeHtml(item.name)}</option>`
+    ).join("");
+    $("#local-model-error").classList.add("hidden");
+    $("#local-model-modal").classList.remove("hidden");
+  }
+
+  let huggingFaceSearchTimer;
+  $("#local-repository")?.addEventListener("input", (event) => {
+    clearTimeout(huggingFaceSearchTimer);
+    const query = event.target.value.trim();
+    if (query.length < 2) return;
+    huggingFaceSearchTimer = setTimeout(async () => {
+      try {
+        const task = $("#local-task").value;
+        const models = await api(`/api/huggingface/models?q=${encodeURIComponent(query)}&task=${encodeURIComponent(task)}&limit=12`);
+        $("#huggingface-model-options").innerHTML = models.map((model) =>
+          `<option value="${escapeHtml(model.id)}">${escapeHtml(model.task || "modelo")} · ${Number(model.downloads || 0).toLocaleString()} downloads</option>`
+        ).join("");
+      } catch (_) {
+        // O usuário ainda pode informar qualquer repository ID manualmente.
+      }
+    }, 350);
+  });
 
   function openModal(providerId = null) {
     form.reset();
@@ -168,11 +237,55 @@
   });
   $("#new-provider-button").addEventListener("click", () => openModal());
 
-  Promise.all([api("/api/provider-types"), api("/api/providers")])
-    .then(([knownTypes, savedProviders]) => {
+  $("#new-local-model-button")?.addEventListener("click", openLocalModelModal);
+  $("#local-model-modal-close")?.addEventListener("click", () => $("#local-model-modal").classList.add("hidden"));
+  $("#local-model-form")?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const button = event.currentTarget.querySelector("button[type=submit]");
+    const errorBox = $("#local-model-error");
+    button.disabled = true;
+    errorBox.classList.add("hidden");
+    try {
+      await api("/api/local-models", {
+        method: "POST",
+        body: JSON.stringify({
+          repository_id: $("#local-repository").value,
+          task: $("#local-task").value,
+          revision: $("#local-revision").value,
+          token: $("#local-token").value,
+          download: true,
+          options: { trust_remote_code: $("#local-trust-code").checked },
+        }),
+      });
+      localModels = await api("/api/local-models");
+      renderLocalModels();
+      $("#local-model-modal").classList.add("hidden");
+    } catch (error) {
+      errorBox.textContent = error.message;
+      errorBox.classList.remove("hidden");
+    } finally {
+      button.disabled = false;
+    }
+  });
+
+  Promise.all([
+    api("/api/provider-types"),
+    api("/api/providers"),
+    api("/api/local-models"),
+    api("/api/local-model-tasks"),
+    api("/api/local-models/hardware"),
+  ])
+    .then(([knownTypes, savedProviders, savedModels, knownTasks, hardware]) => {
       types = knownTypes;
       providers = savedProviders;
+      localModels = savedModels;
+      localTasks = knownTasks;
       renderCards();
+      renderLocalModels();
+      const deviceNames = (hardware.devices || []).map((item) => item.name).join(", ");
+      $("#local-hardware").textContent = hardware.available
+        ? `Backend: ${hardware.backend}${hardware.rocm_version ? ` · ROCm ${hardware.rocm_version}` : ""}${deviceNames ? ` · ${deviceNames}` : " · CPU"}`
+        : hardware.error;
     })
     .catch((error) => {
       $("#provider-grid").innerHTML = `<div class="auth-error">${escapeHtml(error.message)}</div>`;

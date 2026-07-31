@@ -139,6 +139,27 @@ class ProviderRow(Base):
     updated_at: Mapped[str] = mapped_column(String(40), nullable=False)
 
 
+class LocalModelRow(Base):
+    __tablename__ = "local_models"
+    __table_args__ = (
+        UniqueConstraint("workspace_id", "repository_id", "revision", "task"),
+    )
+
+    id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    workspace_id: Mapped[str] = mapped_column(
+        String(40), ForeignKey("workspaces.id", ondelete="CASCADE"), index=True
+    )
+    repository_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    revision: Mapped[str] = mapped_column(String(160), default="main", nullable=False)
+    task: Mapped[str] = mapped_column(String(80), nullable=False)
+    local_path: Mapped[str] = mapped_column(String(1000), default="", nullable=False)
+    status: Mapped[str] = mapped_column(String(30), default="registered", nullable=False)
+    error: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    options_json: Mapped[str] = mapped_column(Text, default="{}", nullable=False)
+    created_at: Mapped[str] = mapped_column(String(40), nullable=False)
+    updated_at: Mapped[str] = mapped_column(String(40), nullable=False)
+
+
 class DatabaseConnectionRow(Base):
     __tablename__ = "database_connections"
 
@@ -774,6 +795,106 @@ class Store:
                 select(ProviderRow).where(
                     ProviderRow.id == provider_id,
                     ProviderRow.workspace_id == workspace_id,
+                )
+            )
+            if not row:
+                return False
+            db.delete(row)
+            return True
+
+    @staticmethod
+    def _local_model_dict(row: LocalModelRow) -> dict[str, object]:
+        return {
+            "id": row.id,
+            "workspace_id": row.workspace_id,
+            "repository_id": row.repository_id,
+            "revision": row.revision,
+            "task": row.task,
+            "local_path": row.local_path,
+            "status": row.status,
+            "error": row.error,
+            "options": json.loads(row.options_json or "{}"),
+            "created_at": row.created_at,
+            "updated_at": row.updated_at,
+        }
+
+    def list_local_models(self, workspace_id: str) -> list[dict[str, object]]:
+        with self.Session() as db:
+            rows = db.scalars(
+                select(LocalModelRow)
+                .where(LocalModelRow.workspace_id == workspace_id)
+                .order_by(LocalModelRow.repository_id)
+            ).all()
+            return [self._local_model_dict(row) for row in rows]
+
+    def get_local_model(
+        self, model_id: str, workspace_id: str
+    ) -> dict[str, object] | None:
+        with self.Session() as db:
+            row = db.scalar(
+                select(LocalModelRow).where(
+                    LocalModelRow.id == model_id,
+                    LocalModelRow.workspace_id == workspace_id,
+                )
+            )
+            return self._local_model_dict(row) if row else None
+
+    def create_local_model(
+        self,
+        *,
+        workspace_id: str,
+        repository_id: str,
+        revision: str,
+        task: str,
+        options: dict[str, object],
+        status: str = "registered",
+    ) -> dict[str, object]:
+        now = utc_now()
+        row = LocalModelRow(
+            id=f"mdl-{uuid4().hex[:12]}",
+            workspace_id=workspace_id,
+            repository_id=repository_id,
+            revision=revision,
+            task=task,
+            status=status,
+            options_json=json.dumps(options),
+            created_at=now,
+            updated_at=now,
+        )
+        with self.Session.begin() as db:
+            db.add(row)
+        return self._local_model_dict(row)
+
+    def update_local_model(
+        self,
+        model_id: str,
+        workspace_id: str,
+        *,
+        status: str,
+        local_path: str = "",
+        error: str = "",
+    ) -> dict[str, object] | None:
+        with self.Session.begin() as db:
+            row = db.scalar(
+                select(LocalModelRow).where(
+                    LocalModelRow.id == model_id,
+                    LocalModelRow.workspace_id == workspace_id,
+                )
+            )
+            if not row:
+                return None
+            row.status = status
+            row.local_path = local_path
+            row.error = error
+            row.updated_at = utc_now()
+        return self._local_model_dict(row)
+
+    def delete_local_model(self, model_id: str, workspace_id: str) -> bool:
+        with self.Session.begin() as db:
+            row = db.scalar(
+                select(LocalModelRow).where(
+                    LocalModelRow.id == model_id,
+                    LocalModelRow.workspace_id == workspace_id,
                 )
             )
             if not row:

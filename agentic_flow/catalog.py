@@ -192,6 +192,48 @@ NODE_CATALOG: list[dict[str, Any]] = [
         ],
     },
     {
+        "type": "audio_input",
+        "name": "Entrada de áudio",
+        "description": "Permite selecionar ou arrastar áudio com player integrado.",
+        "category": "Entradas",
+        "color": "#f59e0b",
+        "icon": "AUD",
+        "inputs": [],
+        "outputs": [
+            {"id": "default", "label": "áudio", "kind": "flow", "data_type": "audio"}
+        ],
+        "defaults": {"input_key": "audio"},
+        "fields": [
+            {"key": "input_key", "label": "Chave técnica", "type": "text", "advanced": True}
+        ],
+    },
+    {
+        "type": "local_model",
+        "name": "Modelo local multimodal",
+        "description": "Executa LLM, visão, áudio, imagem ou 3D instalado do Hugging Face.",
+        "category": "IA local",
+        "color": "#f59e0b",
+        "icon": "HF",
+        "inputs": [
+            {"id": "input", "label": "entrada", "kind": "flow", "multiple": False}
+        ],
+        "outputs": [
+            {"id": "default", "label": "resultado", "kind": "flow"}
+        ],
+        "defaults": {
+            "model_id": "",
+            "input_field": "prompt",
+            "output_field": "local_output",
+            "parameters": "{}",
+        },
+        "fields": [
+            {"key": "model_id", "label": "Modelo instalado", "type": "local_model_select"},
+            {"key": "input_field", "label": "Campo de entrada", "type": "text", "advanced": True},
+            {"key": "output_field", "label": "Campo de saída", "type": "text", "advanced": True},
+            {"key": "parameters", "label": "Parâmetros de inferência (JSON)", "type": "textarea", "advanced": True},
+        ],
+    },
+    {
         "type": "vector_database",
         "name": "Banco de Vetores",
         "description": "Cria uma base isolada, processa textos recebidos e os mantém indexados.",
@@ -554,10 +596,12 @@ NODE_ICON_NAMES = {
     "text_input": "type",
     "image_input": "image",
     "video_input": "video",
+    "audio_input": "audio-lines",
     "webhook": "webhook",
     "prompt": "message-square-code",
     "llm": "cpu",
     "agent": "bot",
+    "local_model": "hard-drive",
     "vector_database": "database-zap",
     "rag": "search-code",
     "mcp_server": "plug-zap",

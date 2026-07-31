@@ -61,6 +61,15 @@ PROVIDER_TYPES: list[dict[str, Any]] = [
         "description": "Modelos locais pelo endpoint compatível do Ollama.",
     },
     {
+        "type": "huggingface_local",
+        "name": "Hugging Face local",
+        "protocol": "local",
+        "base_url": "local://huggingface",
+        "default_model": "",
+        "requires_key": False,
+        "description": "Modelos Hugging Face baixados e executados neste servidor.",
+    },
+    {
         "type": "groq",
         "name": "Groq",
         "protocol": "openai",
@@ -123,10 +132,11 @@ class CredentialCipher:
 
 
 class ProviderRuntime:
-    def __init__(self, store, encryption_secret: str, http_transport=None):
+    def __init__(self, store, encryption_secret: str, http_transport=None, local_runtime=None):
         self.store = store
         self.cipher = CredentialCipher(encryption_secret)
         self.http_transport = http_transport
+        self.local_runtime = local_runtime
 
     def encrypt_key(self, api_key: str) -> str:
         return self.cipher.encrypt(api_key)
@@ -219,6 +229,17 @@ class ProviderRuntime:
         selected_model = model or provider["default_model"]
         if not selected_model:
             raise RuntimeError("Informe um modelo no nó ou no provedor.")
+
+        if definition["protocol"] == "local":
+            if not self.local_runtime:
+                raise RuntimeError("O runtime de modelos locais não está configurado.")
+            return self.local_runtime.chat(
+                model_id=selected_model,
+                workspace_id=workspace_id,
+                instructions=instructions,
+                prompt=prompt,
+                temperature=temperature,
+            )
 
         if definition["protocol"] == "anthropic":
             base_url = provider["base_url"].rstrip("/")

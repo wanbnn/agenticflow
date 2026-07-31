@@ -37,6 +37,8 @@ services:
       CREDENTIALS_ENCRYPTION_KEY: ${CREDENTIALS_ENCRYPTION_KEY:-change-this-encryption-key-before-production}
       COOKIE_SECURE: ${COOKIE_SECURE:-false}
       AGENTIC_FLOW_DATA_DIR: /app/data
+      AGENTIC_FLOW_MODEL_DIR: /app/data/models
+      HF_HOME: /app/data/huggingface
     ports:
       - "${AGENTIC_FLOW_PORT:-16777}:16777"
     volumes:

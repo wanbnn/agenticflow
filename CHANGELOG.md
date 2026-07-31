@@ -9,6 +9,10 @@ projeto adota [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
 ### Adicionado
 
+- runtime self-hosted para LLM, visão, áudio, imagem, 3D e embeddings;
+- catálogo, download e gerenciamento de modelos do Hugging Face Hub;
+- suporte ROCm 7.14/PyTorch 2.12 com lock das arquiteturas AMD `gfx`;
+- nós de modelo local multimodal e entrada tipada de áudio;
 - documentação comunitária e templates do GitHub;
 - workflow de integração contínua;
 - README orientado a deploy Docker.

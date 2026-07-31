@@ -286,6 +286,13 @@ class WorkflowEngine:
                     raise ValueError("Selecione um vídeo no playground.")
                 data[input_key] = result
                 data["video"] = result
+            elif node.type == "audio_input":
+                input_key = str(config.get("input_key") or "audio")
+                result = lookup(data, input_key, None)
+                if result is None:
+                    raise ValueError("Selecione um áudio no playground.")
+                data[input_key] = result
+                data["audio"] = result
             elif node.type == "webhook":
                 result = data
                 data["_trigger"] = {
@@ -332,6 +339,35 @@ class WorkflowEngine:
                 result = extract_video_frames(asset, config)
                 data[output_field] = result["frames"]
                 data[f"{output_field}_metadata"] = result["metadata"]
+            elif node.type == "local_model":
+                local_runtime = getattr(self.provider_runtime, "local_runtime", None)
+                if not local_runtime:
+                    raise RuntimeError("O runtime de modelos locais não está configurado.")
+                model_id = str(config.get("model_id") or "")
+                if not model_id:
+                    raise ValueError("Selecione um modelo local instalado.")
+                input_field = str(config.get("input_field") or "prompt")
+                output_field = str(config.get("output_field") or "local_output")
+                value, connected = self._node_input(node, state, data, input_field)
+                if value is None and not connected:
+                    value = data.get("prompt", data.get("message"))
+                if value is None:
+                    raise ValueError(f"O campo de entrada “{input_field}” não foi informado.")
+                parameters = config.get("parameters") or {}
+                if isinstance(parameters, str):
+                    try:
+                        parameters = json.loads(parameters)
+                    except json.JSONDecodeError as exc:
+                        raise ValueError("Os parâmetros de inferência precisam ser JSON válido.") from exc
+                if not isinstance(parameters, dict):
+                    raise ValueError("Os parâmetros de inferência precisam ser um objeto JSON.")
+                result = local_runtime.infer(
+                    model_id=model_id,
+                    workspace_id=state.get("workspace_id", ""),
+                    value=value,
+                    parameters=parameters,
+                )
+                data[output_field] = result
             elif node.type == "vector_database":
                 if not self.vector_store:
                     raise RuntimeError("O armazenamento vetorial não está configurado.")

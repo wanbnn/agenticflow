@@ -7,6 +7,7 @@
   const state = {
     catalog: [],
     providers: [],
+    localModels: [],
     databaseConnections: [],
     workflow: null,
     permissions: {},
@@ -230,6 +231,12 @@
         ? `<div class="node-media-preview video-preview"><video src="${escapeHtml(video)}" muted preload="metadata"></video><span>▶ Vídeo</span></div>`
         : `<div class="video-result-viewer"><video src="${escapeHtml(video)}" controls preload="metadata"></video></div>`;
     }
+    const audio = mediaUri(value, "audio");
+    if (audio) {
+      return compact
+        ? `<div class="node-media-preview video-preview"><span>♫ Áudio</span></div>`
+        : `<div class="audio-result-viewer"><audio src="${escapeHtml(audio)}" controls preload="metadata"></audio></div>`;
+    }
     return "";
   }
 
@@ -299,6 +306,7 @@
     if (node.type === "text_input") return "texto digitado no playground";
     if (node.type === "image_input") return "imagem com pré-visualização";
     if (node.type === "video_input") return "vídeo com player";
+    if (node.type === "audio_input") return "áudio com player";
     if (node.type === "prompt") return "Template dinâmico";
     if (node.type === "file") return `${String(node.config.format || "auto").toUpperCase()} · ${node.config.output_field || "document_text"}`;
     if (node.type === "image") return `${node.config.operation || "inspect"} · ${node.config.output_format || "PNG"}`;
@@ -786,6 +794,7 @@
       text_input: "text",
       image_input: "image",
       video_input: "video",
+      audio_input: "audio",
     };
     if (typedInputBases[type]) {
       const siblingCount = state.workflow.nodes.filter(
@@ -865,6 +874,20 @@
               .join("")}
           </select>
           <small class="field-help"><a href="/settings/databases">Gerenciar bancos do workspace</a></small>`;
+        } else if (field.type === "local_model_select") {
+          const options = state.localModels.filter((model) => model.status === "ready");
+          control = `<select data-config-key="${field.key}">
+            <option value="">Selecione um modelo local</option>
+            ${options
+              .map(
+                (model) =>
+                  `<option value="${escapeHtml(model.id)}" ${
+                    String(value) === model.id ? "selected" : ""
+                  }>${escapeHtml(model.repository_id)} · ${escapeHtml(model.task)}</option>`
+              )
+              .join("")}
+          </select>
+          <small class="field-help"><a href="/settings/providers">Instalar modelos Hugging Face</a></small>`;
         } else if (field.type === "node_select") {
           const allowedTypes = field.node_types || [];
           const options = state.workflow.nodes.filter(
@@ -931,7 +954,7 @@
     const note =
       node.type === "llm" || node.type === "agent"
         ? '<div class="provider-note">Escolha um provedor cadastrado visualmente. O modelo em branco usa o padrão definido no provedor.</div>'
-        : ["text_input", "image_input", "video_input"].includes(node.type)
+        : ["text_input", "image_input", "video_input", "audio_input"].includes(node.type)
         ? '<div class="provider-note">O controle correto será criado automaticamente no playground ao executar o workflow.</div>'
         : node.type === "vector_database"
         ? '<div class="provider-note"><strong id="vector-database-status">Consultando a base…</strong><br>Esta instância possui armazenamento próprio. Conteúdo repetido é deduplicado automaticamente.</div>'
@@ -1104,7 +1127,7 @@
 
   function typedInputNodes() {
     return state.workflow.nodes.filter((node) =>
-      ["text_input", "image_input", "video_input"].includes(node.type)
+      ["text_input", "image_input", "video_input", "audio_input"].includes(node.type)
     );
   }
 
@@ -1125,13 +1148,14 @@
               </div>`;
             }
             const isVideo = node.type === "video_input";
+            const isAudio = node.type === "audio_input";
             const preview = value
               ? renderMedia(value)
-              : `<div class="typed-drop-placeholder"><span>${isVideo ? "▶" : "◇"}</span><strong>Selecionar ${isVideo ? "vídeo" : "imagem"}</strong><small>clique ou arraste o arquivo aqui</small></div>`;
+              : `<div class="typed-drop-placeholder"><span>${isAudio ? "♫" : isVideo ? "▶" : "◇"}</span><strong>Selecionar ${isAudio ? "áudio" : isVideo ? "vídeo" : "imagem"}</strong><small>clique ou arraste o arquivo aqui</small></div>`;
             return `<label class="typed-input-card media ${value ? "has-media" : ""}" data-typed-drop="${node.id}">
-              <div class="typed-input-head"><span>${isVideo ? "VID" : "IMG"}</span><strong>${escapeHtml(node.name)}</strong></div>
+              <div class="typed-input-head"><span>${isAudio ? "AUD" : isVideo ? "VID" : "IMG"}</span><strong>${escapeHtml(node.name)}</strong></div>
               ${preview}
-              <input class="hidden" type="file" data-typed-file="${node.id}" accept="${isVideo ? "video/*" : "image/*"}">
+              <input class="hidden" type="file" data-typed-file="${node.id}" accept="${isAudio ? "audio/*" : isVideo ? "video/*" : "image/*"}">
             </label>`;
           })
           .join("")
@@ -1141,9 +1165,9 @@
   function attachTypedFile(nodeId, file) {
     const node = state.workflow.nodes.find((item) => item.id === nodeId);
     if (!node || !file) return;
-    const expected = node.type === "video_input" ? "video/" : "image/";
+    const expected = node.type === "audio_input" ? "audio/" : node.type === "video_input" ? "video/" : "image/";
     if (!file.type.startsWith(expected)) {
-      toast(`Selecione um arquivo de ${expected === "video/" ? "vídeo" : "imagem"}.`, "error");
+      toast(`Selecione um arquivo de ${expected === "audio/" ? "áudio" : expected === "video/" ? "vídeo" : "imagem"}.`, "error");
       return;
     }
     if (file.size > 25 * 1024 * 1024) {
@@ -1197,6 +1221,8 @@
           ? "text"
           : node.type === "image_input"
           ? "image"
+          : node.type === "audio_input"
+          ? "audio"
           : "video");
       const value =
         node.type === "text_input"
@@ -1472,16 +1498,18 @@
   async function init() {
     try {
       const workflowId = document.querySelector(".app-shell")?.dataset.workflowId;
-      const [catalog, workflow, providers, databaseConnections, context] = await Promise.all([
+      const [catalog, workflow, providers, localModels, databaseConnections, context] = await Promise.all([
         api("/api/catalog"),
         api(`/api/workflows/${workflowId}`),
         api("/api/providers"),
+        api("/api/local-models"),
         api("/api/database-connections"),
         api("/api/auth/me"),
       ]);
       state.catalog = catalog;
       state.workflow = workflow;
       state.providers = providers;
+      state.localModels = localModels;
       state.databaseConnections = databaseConnections;
       state.permissions = context.permissions || {};
       renderCatalog();

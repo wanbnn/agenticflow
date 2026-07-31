@@ -7,7 +7,7 @@ from typing import Any, Literal
 from urllib.parse import quote_plus
 
 import uvicorn
-from fastapi import FastAPI, HTTPException, Request, Response
+from fastapi import BackgroundTasks, FastAPI, HTTPException, Query, Request, Response
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, field_validator
@@ -16,6 +16,7 @@ from starlette.middleware.sessions import SessionMiddleware
 from .catalog import NODE_CATALOG
 from .databases import DATABASE_TYPES, DATABASE_TYPE_MAP, DatabaseRuntime
 from .engine import WorkflowEngine, validate_workflow
+from .local_models import LOCAL_MODEL_TASK_NAMES, LOCAL_MODEL_TASKS, LocalModelRuntime
 from .models import Edge, Node, Position, RunRequest, Workflow, WorkflowCreate
 from .providers import PROVIDER_TYPES, PROVIDER_TYPE_MAP, ProviderRuntime
 from .store import Store
@@ -68,6 +69,35 @@ class ProviderPayload(BaseModel):
         if value not in PROVIDER_TYPE_MAP:
             raise ValueError("Tipo de provedor desconhecido.")
         return value
+
+
+class LocalModelPayload(BaseModel):
+    repository_id: str = Field(min_length=2, max_length=255)
+    revision: str = Field(default="main", min_length=1, max_length=160)
+    task: str
+    token: str = Field(default="", max_length=1000)
+    download: bool = True
+    options: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("repository_id")
+    @classmethod
+    def valid_repository(cls, value: str) -> str:
+        clean = value.strip()
+        if clean.startswith(("/", "\\")) or ".." in clean.split("/"):
+            raise ValueError("Identificador de repositório Hugging Face inválido.")
+        return clean
+
+    @field_validator("task")
+    @classmethod
+    def valid_task(cls, value: str) -> str:
+        if value not in LOCAL_MODEL_TASK_NAMES:
+            raise ValueError("Modalidade de modelo local desconhecida.")
+        return value
+
+
+class LocalInferencePayload(BaseModel):
+    input: Any
+    parameters: dict[str, Any] = Field(default_factory=dict)
 
 
 class DatabaseConnectionPayload(BaseModel):
@@ -222,13 +252,19 @@ def create_app(database: str | Path | None = None) -> FastAPI:
         "CREDENTIALS_ENCRYPTION_KEY",
         os.getenv("SESSION_SECRET", "dev-only-change-this-session-secret"),
     )
-    provider_runtime = ProviderRuntime(store, encryption_secret)
+    local_runtime = LocalModelRuntime(
+        store, os.getenv("AGENTIC_FLOW_MODEL_DIR", str(DATA_DIR / "models"))
+    )
+    provider_runtime = ProviderRuntime(
+        store, encryption_secret, local_runtime=local_runtime
+    )
     database_runtime = DatabaseRuntime(store, encryption_secret)
     engine = WorkflowEngine(
         provider_runtime, store, database_runtime=database_runtime
     )
     app.state.store = store
     app.state.engine = engine
+    app.state.local_model_runtime = local_runtime
     app.add_middleware(
         SessionMiddleware,
         secret_key=os.getenv("SESSION_SECRET", "dev-only-change-this-session-secret"),
@@ -591,6 +627,93 @@ def create_app(database: str | Path | None = None) -> FastAPI:
         auth_context(request)
         return PROVIDER_TYPES
 
+    @app.get("/api/local-model-tasks")
+    def local_model_tasks(request: Request):
+        auth_context(request)
+        return LOCAL_MODEL_TASKS
+
+    @app.get("/api/local-models")
+    def local_models(request: Request):
+        _, workspace = auth_context(request)
+        return store.list_local_models(workspace["id"])
+
+    @app.get("/api/local-models/hardware")
+    def local_model_hardware(request: Request):
+        auth_context(request)
+        return local_runtime.hardware()
+
+    @app.get("/api/huggingface/models")
+    def search_huggingface_models(
+        request: Request,
+        q: str = Query(default="", max_length=200),
+        task: str = Query(default="", max_length=80),
+        limit: int = Query(default=20, ge=1, le=50),
+    ):
+        require_admin(request)
+        try:
+            return local_runtime.search(q, task, limit)
+        except Exception as exc:
+            raise HTTPException(422, str(exc)) from exc
+
+    @app.post("/api/local-models", status_code=202)
+    def install_local_model(
+        payload: LocalModelPayload,
+        request: Request,
+        background_tasks: BackgroundTasks,
+    ):
+        _, workspace = require_admin(request)
+        try:
+            model = store.create_local_model(
+                workspace_id=workspace["id"],
+                repository_id=payload.repository_id,
+                revision=payload.revision,
+                task=payload.task,
+                options=payload.options,
+                status="installing" if payload.download else "ready",
+            )
+        except Exception as exc:
+            raise HTTPException(409, "Este modelo e revisão já estão registrados.") from exc
+        if payload.download:
+            background_tasks.add_task(
+                local_runtime.install, model["id"], workspace["id"], payload.token
+            )
+        return model
+
+    @app.post("/api/local-models/{model_id}/infer")
+    def infer_local_model(
+        model_id: str, payload: LocalInferencePayload, request: Request
+    ):
+        _, workspace, _ = require_permission(request, "run_workflows")
+        try:
+            return {
+                "model_id": model_id,
+                "output": local_runtime.infer(
+                    model_id=model_id,
+                    workspace_id=workspace["id"],
+                    value=payload.input,
+                    parameters=payload.parameters,
+                ),
+            }
+        except Exception as exc:
+            raise HTTPException(422, str(exc)) from exc
+
+    @app.post("/api/local-models/{model_id}/unload")
+    def unload_local_model(model_id: str, request: Request):
+        _, workspace = require_admin(request)
+        if not store.get_local_model(model_id, workspace["id"]):
+            raise HTTPException(404, "Modelo local não encontrado.")
+        return {"unloaded": local_runtime.unload(model_id)}
+
+    @app.delete("/api/local-models/{model_id}", status_code=204)
+    def delete_local_model(model_id: str, request: Request):
+        _, workspace = require_admin(request)
+        model = store.get_local_model(model_id, workspace["id"])
+        if not model:
+            raise HTTPException(404, "Modelo local não encontrado.")
+        local_runtime.remove_files(model)
+        store.delete_local_model(model_id, workspace["id"])
+        return Response(status_code=204)
+
     @app.get(
         "/settings/databases",
         response_class=HTMLResponse,
@@ -671,7 +794,7 @@ def create_app(database: str | Path | None = None) -> FastAPI:
         definition = PROVIDER_TYPE_MAP[payload.type]
         base_url = (payload.base_url or definition["base_url"]).strip().rstrip("/")
         default_model = (payload.default_model or definition["default_model"]).strip()
-        if not base_url.startswith(("http://", "https://")):
+        if definition["protocol"] != "local" and not base_url.startswith(("http://", "https://")):
             raise HTTPException(422, "A URL base precisa usar http:// ou https://.")
         if payload.enabled and definition["requires_key"] and not payload.api_key:
             raise HTTPException(422, "Informe a API key para ativar este provedor.")
@@ -781,7 +904,7 @@ def create_app(database: str | Path | None = None) -> FastAPI:
         ):
             raise HTTPException(422, "Informe a API key para ativar este provedor.")
         base_url = (payload.base_url or definition["base_url"]).strip().rstrip("/")
-        if not base_url.startswith(("http://", "https://")):
+        if definition["protocol"] != "local" and not base_url.startswith(("http://", "https://")):
             raise HTTPException(422, "A URL base precisa usar http:// ou https://.")
         return store.update_provider(
             provider_id,
