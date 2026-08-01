@@ -249,6 +249,20 @@ agente.
 
 ## 🚀 Instalação
 
+### Shell — recomendado no Linux
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/wanbnn/agenticflow/main/install.sh | sh
+```
+
+O instalador prepara Python 3.12 com `uv`, instala o AgenticFlow em um ambiente
+isolado, detecta NVIDIA/AMD/CPU e resolve CUDA, ROCm ou CPU. Depois, abra um
+novo terminal e execute:
+
+```bash
+agenticflow
+```
+
 ### PowerShell — recomendado no Windows
 
 ```powershell
@@ -288,6 +302,21 @@ instala Python compatível, cria `.venv`, detecta automaticamente CPU ou GPU AMD
 instala o runtime adequado e inicia em `http://127.0.0.1:16777`. Use
 `AGENTIC_FLOW_AMD_GFX=gfx1200` somente para sobrescrever a detecção, ou
 `AGENTIC_FLOW_DISABLE_ROCM=1` para forçar CPU.
+
+### Inicialização direta no Linux
+
+Execute `./start.sh` na raiz do projeto. Na primeira execução ele prepara
+Python 3.12, cria `.venv`, instala o projeto e o runtime adequado ao hardware e
+inicia em `http://127.0.0.1:16777`:
+
+```bash
+git clone https://github.com/wanbnn/agenticflow.git
+cd agenticflow
+./start.sh
+```
+
+Use `./start.sh --install-only` para apenas preparar o ambiente e
+`./start.sh --check-gpu` para exibir o diagnóstico dos runtimes.
 
 ### Docker
 
