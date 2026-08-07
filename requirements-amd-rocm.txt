@@ -27,7 +27,7 @@ rocm-sdk-device-gfx908==7.14.0
 rocm-sdk-device-gfx90a==7.14.0
 rocm-sdk-libraries==7.14.0
 amd-torch-device-gfx1010==2.12.0+rocm7.14.0
-amd-torch-device-gfx1011==2.12.0+rocm7.14.0
+amd-torch-device-gfx1011==2.13.0+rocm7.14.0
 amd-torch-device-gfx1012==2.12.0+rocm7.14.0
 amd-torch-device-gfx1030==2.12.0+rocm7.14.0
 amd-torch-device-gfx1031==2.12.0+rocm7.14.0
