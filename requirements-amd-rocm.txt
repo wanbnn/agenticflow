@@ -57,7 +57,7 @@ amd-torchvision-device-gfx1030==0.27.0+rocm7.14.0
 amd-torchvision-device-gfx1031==0.27.0+rocm7.14.0
 amd-torchvision-device-gfx1032==0.27.0+rocm7.14.0
 amd-torchvision-device-gfx1033==0.27.0+rocm7.14.0
-amd-torchvision-device-gfx1034==0.27.0+rocm7.14.0
+amd-torchvision-device-gfx1034==0.28.0+rocm7.14.0
 amd-torchvision-device-gfx1035==0.27.0+rocm7.14.0
 amd-torchvision-device-gfx1036==0.27.0+rocm7.14.0
 amd-torchvision-device-gfx1100==0.27.0+rocm7.14.0
